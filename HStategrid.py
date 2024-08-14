@@ -19,8 +19,8 @@ flaut_status = 0
 net_status = 0
 
 platform_data = {
-    "netType": 0,
-    "sigVal": 0,
+    "netType": 13,
+    "sigVal": 10,
     "netId": 14,
 }
 
@@ -425,15 +425,15 @@ def get_ip_from_resolv():
     if os.path.getsize("/etc/resolv.conf") == 0:
         with open("/etc/resolv.conf", 'a') as file:
             file.write("nameserver 8.8.8.8\n")
-        return "8.8.8.8"
+        return "10.111.186.1"
     else:
         with open("/etc/resolv.conf", 'r') as file:
             lines = file.readlines()
             # 提取最后一行中的 IP 地址
             for line in lines:
                 if line.startswith("nameserver"):
-                    return line.split()[1].strip()
-    return "8.8.8.8"  # 默认 IP
+                    return "10.111.186.1"
+    return "10.111.186.1"
 
 
 def ping_ip(IP):
@@ -531,7 +531,7 @@ def get_ping():
         try:
             packet_loss, average_latency = parse_ping_output(ping_output)
             if packet_loss is not None and average_latency is not None:
-                if packet_loss <= 90:
+                if packet_loss <= 100:
                     return 1
                 else:
                     return 0

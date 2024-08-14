@@ -1,3 +1,4 @@
+import os
 import queue
 import threading
 from datetime import datetime
@@ -268,3 +269,28 @@ def unix_time_14(unix_t):
     dt_time = datetime.fromtimestamp(unix_t)
     return dt_time.strftime("%Y%m%d%H%M%S")
 
+
+def set_apn(file_path='/etc/ppp/peers/quectel-chat-connect', old_apn='3gnet', new_apn='CMIOTECHARGENET'):
+    # Check if the file exists
+    if not os.path.exists(file_path):
+        print(f"The file {file_path} does not exist.")
+        return
+
+    # Read the file contents
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Modify the line containing the old APN
+    modified_lines = []
+    for line in lines:
+        if old_apn in line:
+            modified_line = line.replace(old_apn, new_apn)
+            modified_lines.append(modified_line)
+        else:
+            modified_lines.append(line)
+
+    # Write the modified lines back to the file
+    with open(file_path, 'w') as file:
+        file.writelines(modified_lines)
+
+    print(f"The APN in {file_path} has been modified from '{old_apn}' to '{new_apn}'.")

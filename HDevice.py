@@ -814,7 +814,7 @@ def app_charging_record(msg_body_dict: dict):
                 "gunNo": gunNo,
                 "preTradeNo": HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo", ""),
                 "tradeNo": HHhdlist.device_charfer_p.get(gunNo).get("tradeNo", ""),
-                "vinCode": "",
+                "vinCode": HHhdlist.device_charfer_p.get(gunNo).get("vin", ""),
                 "timeDivType": timeDivType,
                 "chargeStartTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_time"),
                 "chargeEndTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_time"),
@@ -1059,7 +1059,7 @@ def app_charge_fee(msg_body_dict: dict):
                 {"deep_valley_service_cost": msg_body_dict.get('deep_valley_service_cost', -1)})
             HHhdlist.device_charfer_p[gunNo].update({"total_kwh": msg_body_dict.get('total_energy', -1)})
             HHhdlist.device_charfer_p[gunNo].update(
-                {"total_service_cost": msg_body_dict.get('total_electric_cost', -1)})
+                {"total_electric_cost": msg_body_dict.get('total_electric_cost', -1)})
             HHhdlist.device_charfer_p[gunNo].update({"total_service_cost": msg_body_dict.get('total_service_cost', -1)})
             HHhdlist.device_charfer_p[gunNo].update({"total_cost": msg_body_dict.get('total_cost', -1)})
 

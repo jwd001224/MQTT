@@ -5,6 +5,7 @@ import time
 
 import HDevice
 import HPlatform
+import HHhdlist
 import HStategrid
 import HSyslog
 
@@ -20,20 +21,17 @@ def main():
     HDevice.do_mqtt_period()
 
     try:
-        # HStategrid.disable_network_interface("eth0")
-        # HStategrid.disable_network_interface("eth1")
+        HStategrid.disable_network_interface("eth0")
+        HStategrid.disable_network_interface("eth1")
+        HStategrid.disable_network_interface("eth2")
+        HHhdlist.set_apn()
         HPlatform.linkkit_init()
     except Exception as e:
         print(f"\033[91mHPlatform.linkkit_init error: {e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"HPlatform.linkkit_init error: {e} .{inspect.currentframe().f_lineno}")
     try:
-        i = 1
         while True:
-            if i % 100000 == 0:
-                print("heat")
-                i += 1
-            else:
-                i += 1
+            pass
     except Exception as e:
         print(f"\033[91mHPlatform.mainloop error: {e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"HPlatform.mainloop error: {e} .{inspect.currentframe().f_lineno}")

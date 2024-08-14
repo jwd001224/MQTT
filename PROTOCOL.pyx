@@ -1147,13 +1147,24 @@ cdef int callback_service_certGet(evs_device_meta *meta):
     try:
         product_key = get_DeviceInfo("productKey")
         if product_key is None:
-            product_key = ""
+            product_key = "0"
+        if len(product_key) != 11 and product_key is not None:
+            product_key = product_key[0:11]
+            save_DeviceInfo("productKey", 1, product_key, 0)
+
         device_name = get_DeviceInfo("deviceName")
         if device_name is None:
-            device_name = ""
+            device_name = "0"
+        if len(device_name) != 24 and device_name is not None:
+            device_name = device_name[0:24]
+            save_DeviceInfo("deviceName", 1, device_name, 0)
+
         device_secret = get_DeviceInfo("deviceSecret")
         if device_secret is None:
-            device_secret = ""
+            device_secret = "0"
+        if len(device_secret) != 32 and device_secret is not None:
+            device_secret = device_secret[0:32]
+            save_DeviceInfo("deviceSecret", 1, device_secret, 0)
 
         meta.product_key = str_to_char(product_key)  #设备品类标识字符串
         meta.device_name = str_to_char(device_name)  #某台设备的标识字符串:未注册前为设备出厂编号（16位长度），注册后为设备在物联管理平台的资产码（24位长度）

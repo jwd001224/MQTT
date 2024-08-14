@@ -7,6 +7,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import time
+import datetime
 
 import HSyslog
 import HTools
@@ -22,6 +23,7 @@ meter_property = None
 BMS_property = None
 dc_input_meter_property = None
 property_start = 0
+qr_num = 1
 send_event_queue = queue.Queue()
 
 
@@ -58,108 +60,41 @@ class PeriodicFunctionCaller:
         print(f"new_interval: {new_interval}")
 
 
-def get_RegisterCode():
-    result = HStategrid.get_DeviceInfo("deviceCode")
-    if not result:
-        deviceCode = HStategrid.set_deviceCode()
-        if deviceCode == "":
-            return -1
-
-    deviceCode_data = {
-        "deviceCode": result
-    }
-    deviceCode_data_url = urllib.parse.urlencode(deviceCode_data).encode('utf-8')
-    deviceCode_headers = {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    deviceCode_url = 'http://121.196.185.161:8081/api/access/pile/getRegisterCode'
-
-    HSyslog.log_info("deviceCode: " + result)
-    deviceCode_req = urllib.request.Request(deviceCode_url, data=deviceCode_data_url, headers=deviceCode_headers,
-                                            method='POST')
-    try:
-        with urllib.request.urlopen(deviceCode_req) as deviceCode_response:
-            deviceCode_data = deviceCode_response.read().decode('utf-8')
-            deviceCode_data = json.loads(deviceCode_data)
-            print(deviceCode_data)
-            if deviceCode_data.get('code') == 200:  # 假设0表示成功
-                HSyslog.log_info(f"registerCode的消息回复: {deviceCode_data}")
-                registerCode = deviceCode_data.get("data").get("registerCode")
-                HSyslog.log_info("registerCode: " + registerCode)
-
-                registerCode_data = {
-                    "registerCode": registerCode
-                }
-                registerCode_data_url = urllib.parse.urlencode(registerCode_data).encode('utf-8')
-                registerCode_headers = {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-                registerCode_url = ' http://121.196.185.161:8081/api/access/pile/getCertificateInfo'
-                registerCode_req = urllib.request.Request(registerCode_url, data=registerCode_data_url,
-                                                          headers=registerCode_headers,
-                                                          method='POST')
-                try:
-                    with urllib.request.urlopen(registerCode_req) as registerCode_response:
-                        registerCode_data = registerCode_response.read().decode('utf-8')
-                        registerCode_data = json.loads(registerCode_data)
-                        print(registerCode_data)
-                        if registerCode_data.get('code') == 200:
-                            HSyslog.log_info(f"registerCode的消息回复: {registerCode_data}")
-                            device_info = {
-                                "deviceCode": result,  # 出厂编码
-                                "Vendor_Code": '1031',  # 厂商代码
-                                "Manufacture_Date": HStategrid.Manufacture_Date,  # 出厂日期
-                                "device_type": "01",  # 设备类型
-                                "registerCode": registerCode,  # 注册码
-                                "productKey": registerCode_data.get("data").get("productKey"),  # 产品密钥
-                                "deviceName": registerCode_data.get("data").get("deviceName"),  # 资产码
-                                "deviceSecret": registerCode_data.get("data").get("deviceSecret")  # 设备密钥
-                            }
-                            return device_info
-                        else:
-                            HSyslog.log_info('POST device_info failed with status code:' + deviceCode_data['message'])
-                            return 0
-                except urllib.error.HTTPError as e:
-                    HSyslog.log_info(f"HTTP错误: {e.code} - {e.reason}")
-                except urllib.error.URLError as e:
-                    HSyslog.log_info(f"请求失败: {e.reason}")
-            else:
-                HSyslog.log_info('POST registerCode failed with status code:' + deviceCode_data['message'])
-                return 0
-    except urllib.error.HTTPError as e:
-        HSyslog.log_info(f"HTTP错误: {e.code} - {e.reason}")
-    except urllib.error.URLError as e:
-        HSyslog.log_info(f"请求失败: {e.reason}")
-
-
 def linkkit_init():
-    if HStategrid.get_DeviceInfo("registerCode") is None:
-        while True:
-            if HStategrid.get_DeviceInfo("registerCode") is None:
-                time.sleep(30)
-            else:
-                break
-    else:
-        try:
-            init_data = {
-                "device_reg_code": HStategrid.get_DeviceInfo("registerCode"),
-                "device_uid": HStategrid.get_DeviceInfo("deviceCode"),
-            }
-            init_data_json = json.dumps(init_data)
-            iot_linkkit_init(init_data_json)
-            result = HStategrid.get_VerInfoEvt(4)
-            if result[0] is not None:
-                set_version(result[0])
-            iot_link_connect(1, 0)
-            plamform_server()
-            do_plamform_send()
-            if HStategrid.get_DeviceInfo("00110") is not None and HHhdlist.device_charfer_p == {}:
-                for i in range(0, HStategrid.get_DeviceInfo("00110")):
-                    HHhdlist.device_charfer_p[i + 1] = {}
-                    HHhdlist.bms_sum[i + 1] = 1
-        except Exception as e:
-            print(f"\033[91mlinkkit_init error: {e} .{inspect.currentframe().f_lineno}\033[0m")
-            HSyslog.log_info(f"linkkit_init error: {e} .{inspect.currentframe().f_lineno}")
+    while True:
+        if HStategrid.get_DeviceInfo("deviceCode") is None:
+            time.sleep(10)
+            print(1)
+        else:
+            break
+    while True:
+        if HStategrid.get_ping() == 0:
+            time.sleep(5)
+            print(2)
+        else:
+            break
+    try:
+        init_data = {
+            "device_uid": HStategrid.get_DeviceInfo("deviceCode")
+        }
+        init_data_json = json.dumps(init_data)
+        iot_linkkit_init(init_data_json)
+        result = HStategrid.get_VerInfoEvt(4)
+        if result[0] is not None:
+            set_version(result[0])
+        HStategrid.save_DeviceInfo("SDKVersion", 1, "A0.3", 0)
+        HStategrid.save_DeviceInfo("UIVersion", 1, "A1.4", 0)
+        time.sleep(3)
+        iot_link_connect(0, 1)
+        plamform_server()
+        do_plamform_send()
+        if HStategrid.get_DeviceInfo("00110") is not None and HHhdlist.device_charfer_p == {}:
+            for i in range(0, HStategrid.get_DeviceInfo("00110")):
+                HHhdlist.device_charfer_p[i + 1] = {}
+                HHhdlist.bms_sum[i + 1] = 1
+    except Exception as e:
+        print(f"\033[91mlinkkit_init error: {e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"linkkit_init error: {e} .{inspect.currentframe().f_lineno}")
 
 
 # -------------------- 发送事件 ------------------ #
@@ -183,9 +118,7 @@ def do_plamform_send():
 
 def __plamform_send():
     while True:
-        print("asfsd")
         iot_mainloop()
-        print("32151436")
         if HStategrid.get_link_init_status() == 1:
             if not send_event_queue:
                 time.sleep(0.1)
@@ -205,8 +138,11 @@ def __plamform_send():
                 except Exception as e:
                     print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
         else:
-            send_event_queue.get()
-            time.sleep(0.1)
+            if send_event_queue.empty():
+                time.sleep(0.1)
+            else:
+                send_event_queue.get()
+                time.sleep(0.1)
 
 
 # -------------------- 发送属性 ------------------ #
@@ -255,14 +191,14 @@ def plamform_property_thread(info_dict: dict):
 def _send_property_dcPile():
     if HStategrid.get_property_status() == 1:
         try:
-            print(f"device_charfer_p: {HHhdlist.device_charfer_p}")
+            HStategrid.get_net()
             eleModelId = HStategrid.get_DeviceInfo("eleModelId")
             serModelId = HStategrid.get_DeviceInfo("serModelId")
             time.sleep(0.1)
             dcPile = {
-                "netType": HStategrid.platform_data.get("netType", 0),
+                "netType": HStategrid.platform_data.get("netType", 13),
                 "sigVal": HStategrid.platform_data.get("sigVal", 10),
-                "netId": HStategrid.platform_data.get("netId", 0),
+                "netId": HStategrid.platform_data.get("netId", 14),
                 "acVolA": 380,
                 "acCurA": 0,
                 "acVolB": 380,
@@ -335,6 +271,7 @@ def _send_property_dc_work():
 
 
 def _send_property_dc_nonWork():
+    global qr_num
     if HStategrid.get_property_status() == 1:
         try:
             for i in HHhdlist.gun.keys():
@@ -356,6 +293,26 @@ def _send_property_dc_nonWork():
                         "dcCur": HHhdlist.gun.get(i).get(123, 0) * 10,
                     }
                     plamform_property(17, dc_nonWork)
+            print(qr_num)
+            if qr_num == 2:
+                deviceCode = HStategrid.get_DeviceInfo("deviceCode")
+                qrCode0 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:001"
+                qrCode1 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:002"
+                qrcode = [qrCode0, qrCode1]
+
+                for i in range(0, len(qrcode)):
+                    info_qrCode = {
+                        "gun_id": i,
+                        "source": i,
+                        "content": qrcode[i],
+                    }
+                    HTools.Htool_app_QR_code_update(info_qrCode)
+                qr_num = qr_num + 1
+            else:
+                if qr_num < 3:
+                    qr_num = qr_num + 1
+                else:
+                    pass
             return "dc_nonWork"
         except Exception as e:
             print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
@@ -550,6 +507,14 @@ def service_dev_maintain(data_json):  # 充电机状态控制
             json_str = json.dumps(data)
             subprocess.run(['supervisorctl', 'start', 'internal'])
             subprocess.run(['supervisorctl', 'start', 'internal_ui'])
+        if ctrlType == 15:
+            data = {
+                "ctrlType": info_dict.get("ctrlType"),
+                "reason": 10
+            }
+            json_str = json.dumps(data)
+            subprocess.run(['supervisorctl', 'stop', 'internal'])
+            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
         if ctrlType == 17:
             data = {
                 "ctrlType": info_dict.get("ctrlType"),
@@ -998,6 +963,12 @@ def service_orderCharge(data_json):  # 充电策略服务
 def service_get_config(data_json):  # 获取配置
     try:
         HSyslog.log_info(f"Service_get_config: {data_json}")
+        qrCode_1 = HStategrid.get_DeviceInfo("qrCode0")
+        if qrCode_1 is None:
+            qrCode_1 = ""
+        qrCode_2 = HStategrid.get_DeviceInfo("qrCode1")
+        if qrCode_2 is None:
+            qrCode_2 = ""
         data = {
             "equipParamFreq": HStategrid.get_DeviceInfo("equipParamFreq"),
             "gunElecFreq": HStategrid.get_DeviceInfo("gunElecFreq"),
@@ -1009,7 +980,7 @@ def service_get_config(data_json):  # 获取配置
             "grndLock": HStategrid.get_DeviceInfo("grndLock"),
             "doorLock": HStategrid.get_DeviceInfo("doorLock"),
             "encodeCon": HStategrid.get_DeviceInfo("encodeCon"),
-            "qrCode": [HStategrid.get_DeviceInfo("qrCode0"), HStategrid.get_DeviceInfo("qrCode1")]
+            "qrCode": [qrCode_1, qrCode_2]
         }
         json_str = json.dumps(data)
         return json_str
@@ -1067,37 +1038,21 @@ def service_update_config(data_json):  # 更新配置
         return -1
 
     try:
-        result = []
-        for i in range(0, len(info_dict.get("qrCode"))):
+        deviceCode = HStategrid.get_DeviceInfo("deviceCode")
+        qrCode0 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:001"
+        qrCode1 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:002"
+        qrcode = [qrCode0, qrCode1]
+
+        for i in range(0, len(qrcode)):
             info_qrCode = {
                 "gun_id": i,
                 "source": i,
-                "content": info_dict.get("qrCode")[i],
+                "content": qrcode[i],
             }
             HTools.Htool_app_QR_code_update(info_qrCode)
-            msg = HHhdlist.qr_queue.get(timeout=5)
-            if msg == -1:
-                return -1
-            result.append(msg)
 
-        count = 0
-        for i in range(0, len(result)):
-            if result[i].get("result") == 1:
-                data = {
-                    "result": 11
-                }
-                json_str = json.dumps(data)
-                return 11
-            else:
-                count += 1
-
-        if count == len(info_dict.get("qrCode")):
-            data = {
-                "result": 10
-            }
-            json_str = json.dumps(data)
-            for gun_num in range(0, count):
-                HStategrid.save_DeviceInfo("qrCode" + str(gun_num), 1, info_dict.get("qrCode")[gun_num], 0)
+            for gun_num in range(0, len(qrcode)):
+                HStategrid.save_DeviceInfo("qrCode" + str(gun_num), 1, qrcode[gun_num], 0)
             return 10
     except Exception as e:
         print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
@@ -1165,7 +1120,28 @@ def service_time_sync(data_json):  # 时钟同步
         HSyslog.log_info(f"Service_time_sync: {data_json}")
         HSyslog.log_info(data_json)
         info_dict = json.loads(data_json)
-        HTools.Htool_app_time_sync(info_dict)  # 传入设备
+        time_dict = {
+            "year": info_dict.get("year"),
+            "month": info_dict.get("month"),
+            "day": info_dict.get("day"),
+            "hour": info_dict.get("hour"),
+            "minute": info_dict.get("minute"),
+            "second": info_dict.get("second"),
+        }
+        year = info_dict.get("year")
+        month = info_dict.get("month")
+        day = info_dict.get("day")
+        hour = info_dict.get("hour")
+        minute = info_dict.get("minute")
+        second = info_dict.get("second")
+
+        time_obj = datetime(year, month, day, hour, minute, second)
+        # 转换为所需格式的字符串
+        formatted_time = time_obj.strftime("%Y-%m-%d %H:%M:%S")
+        command_time = f"sudo date -s '{formatted_time}'"
+        subprocess.run(command_time, shell=True, check=True, capture_output=True, text=True)
+        command = f"sudo hwclock --systohc"
+        subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
     except Exception as e:
         print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
         print(f"input_data---data_json: {data_json}")
@@ -1383,6 +1359,18 @@ def send_firmwareEvt():
             for i in range(0, HStategrid.get_DeviceInfo("00110")):
                 HHhdlist.device_charfer_p[i + 1] = {}
         plamform_event(0, info_dict)
+        deviceCode = HStategrid.get_DeviceInfo("deviceCode")
+        qrCode0 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:001"
+        qrCode1 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:002"
+        qrcode = [qrCode0, qrCode1]
+
+        for i in range(0, len(qrcode)):
+            info_qrCode = {
+                "gun_id": i,
+                "source": i,
+                "content": qrcode[i],
+            }
+            HTools.Htool_app_QR_code_update(info_qrCode)
         return 0
     except Exception as e:
         print(f"\033[91msend_firmwareEvts error: {e} .{inspect.currentframe().f_lineno}\033[0m")
@@ -1501,10 +1489,11 @@ def send_verInfoEvt(device_type):
             time.sleep(1)
         try:
             data = HStategrid.get_VerInfoEvt(device_code)
-
+            sdk_version = HStategrid.get_DeviceInfo("SDKVersion")
+            ui_version = HStategrid.get_DeviceInfo("UIVersion")
             info_dict = {
                 "devRegMethod": 10,
-                "pileSoftwareVer": data[0] + " SDK-A0.2 " + "UI-A1.1 ",
+                "pileSoftwareVer": f"Charger: {data[0]}, SDK: {sdk_version}, UI: {ui_version}",
                 "pileHardwareVer": data[1],
                 "sdkVer": "SDK_v1.1.7"
             }
