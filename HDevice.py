@@ -1401,7 +1401,7 @@ def app_read_version_number_response(msg_body_dict: dict):
 def app_parameter_fetch_response(msg_body_dict: dict):
     device_type = msg_body_dict.get('device_type', -1)  # int
     device_num = msg_body_dict.get('device_num', -1)  # int
-    invalid_id = msg_body_dict.get('device_num', [])  # array
+    invalid_id = msg_body_dict.get('invalid_id', [])  # array
     count = msg_body_dict.get('count', -1)  # int
     param_info = msg_body_dict.get('param_info', [])  # array
 
