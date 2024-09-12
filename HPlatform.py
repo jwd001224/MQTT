@@ -23,7 +23,6 @@ meter_property = None
 BMS_property = None
 dc_input_meter_property = None
 property_start = 0
-qr_num = 1
 send_event_queue = queue.Queue()
 
 
@@ -38,7 +37,7 @@ class PeriodicFunctionCaller:
         try:
             self.callback()
         except Exception as e:
-            print("\033[91m" + f"{e}" + "\033[0m")
+            HSyslog.log_info(f"{e}")
 
     def call_function_periodically(self):
         if self.timer:
@@ -57,43 +56,49 @@ class PeriodicFunctionCaller:
 
     def set_interval(self, new_interval):
         self.interval = new_interval
-        print(f"new_interval: {new_interval}")
+        HSyslog.log_info(f"new_interval: {new_interval}")
 
 
 def linkkit_init():
     while True:
-        if HStategrid.get_DeviceInfo("deviceCode") is None:
+        if HStategrid.get_DeviceInfo("deviceCode") is None or HStategrid.get_DeviceInfo("deviceCode") == "":
             time.sleep(10)
-            print(1)
         else:
             break
     while True:
         if HStategrid.get_ping() == 0:
             time.sleep(5)
-            print(2)
         else:
             break
     try:
         init_data = {
             "device_uid": HStategrid.get_DeviceInfo("deviceCode")
         }
+
         init_data_json = json.dumps(init_data)
         iot_linkkit_init(init_data_json)
         result = HStategrid.get_VerInfoEvt(4)
         if result[0] is not None:
             set_version(result[0])
-        HStategrid.save_DeviceInfo("SDKVersion", 1, "A0.3", 0)
-        HStategrid.save_DeviceInfo("UIVersion", 1, "A1.4", 0)
+        HStategrid.save_DeviceInfo("SDKVersion", 1, "A0.4", 0)
+        HStategrid.save_DeviceInfo("UIVersion", 1, HHhdlist.read_json_config("ui_version"), 0)
+        print(HStategrid.get_DeviceInfo("productKey"))
+        print(HStategrid.get_DeviceInfo("deviceName"))
+        print(HStategrid.get_DeviceInfo("deviceSecret"))
+        print(HStategrid.get_DeviceInfo("deviceCode"))
+        HHhdlist.save_json_config({"SDKVersion": "A0.3"})
+        HHhdlist.save_json_config({"Platform__type": "GW_SDK"})
         time.sleep(3)
+
         iot_link_connect(0, 1)
         plamform_server()
         do_plamform_send()
-        if HStategrid.get_DeviceInfo("00110") is not None and HHhdlist.device_charfer_p == {}:
-            for i in range(0, HStategrid.get_DeviceInfo("00110")):
+        HStategrid.gun_num = HStategrid.get_DeviceInfo("00110")
+        if HStategrid.gun_num is not None and HHhdlist.device_charfer_p == {}:
+            for i in range(0, HStategrid.gun_num):
                 HHhdlist.device_charfer_p[i + 1] = {}
                 HHhdlist.bms_sum[i + 1] = 1
     except Exception as e:
-        print(f"\033[91mlinkkit_init error: {e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"linkkit_init error: {e} .{inspect.currentframe().f_lineno}")
 
 
@@ -105,8 +110,7 @@ def plamform_event(event_type: int, info_dict: dict):
         send_event_queue.put([event_type, info_json])
         return 0
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91minput_data---info_dict: {info_dict}\033[0m")
+        HSyslog.log_info(f"input_data---info_dict: {info_dict}. {e} .{inspect.currentframe().f_lineno}")
         return -1
 
 
@@ -136,7 +140,7 @@ def __plamform_send():
                         else:
                             HSyslog.log_info("info_msg send error")
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+                    HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
         else:
             if send_event_queue.empty():
                 time.sleep(0.1)
@@ -152,20 +156,20 @@ def plamform_property(property_type: int, property_dict: dict):
         property_json = json.dumps(property_dict)
         send_event_queue.put([property_type, property_json])
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91minput_data---info_dict: {property_dict}\033[0m")
+        HSyslog.log_info(f"input_data---info_dict: {property_dict}. {e} .{inspect.currentframe().f_lineno}")
         return -1
 
 
 def plamform_property_thread(info_dict: dict):
     global property_start
     global dcPile_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
-    dcPile_property = PeriodicFunctionCaller(info_dict.get("equipParamFreq"), _send_property_dcPile)
+    dcPile_property = PeriodicFunctionCaller(info_dict.get("equipParamFreq", 600), _send_property_dcPile)
     dc_work_property = PeriodicFunctionCaller(5, _send_property_dc_work)
-    dc_nonWork_property = PeriodicFunctionCaller(info_dict.get("nonElecFreq"), _send_property_dc_nonWork)
-    meter_property = PeriodicFunctionCaller(info_dict.get("dcMeterFreq") * 60, _send_property_meter)
+    dc_nonWork_property = PeriodicFunctionCaller(info_dict.get("nonElecFreq", 180), _send_property_dc_nonWork)
+    meter_property = PeriodicFunctionCaller(info_dict.get("dcMeterFreq", 300) * 60, _send_property_meter)
     BMS_property = PeriodicFunctionCaller(15, _send_property_BMS)
-    dc_input_meter_property = PeriodicFunctionCaller(info_dict.get("acMeterFreq") * 60, _send_property_dc_input_meter)
+    dc_input_meter_property = PeriodicFunctionCaller(info_dict.get("acMeterFreq", 300) * 60,
+                                                     _send_property_dc_input_meter)
     if not dcPile_property.cleck_thread_status():
         dcPile_property.start_periodic_calling()
         time.sleep(1)
@@ -194,7 +198,9 @@ def _send_property_dcPile():
             HStategrid.get_net()
             eleModelId = HStategrid.get_DeviceInfo("eleModelId")
             serModelId = HStategrid.get_DeviceInfo("serModelId")
-            time.sleep(0.1)
+            if eleModelId is None or serModelId is None:
+                eleModelId = ""
+                serModelId = ""
             dcPile = {
                 "netType": HStategrid.platform_data.get("netType", 13),
                 "sigVal": HStategrid.platform_data.get("sigVal", 10),
@@ -212,10 +218,23 @@ def _send_property_dcPile():
                 "serModelId": serModelId,
             }
             plamform_property(15, dcPile)
+            HSyslog.log_info(HHhdlist.device_charfer_p)
+            qrcode = HHhdlist.read_json_config("qrcode")
+            if qrcode is None:
+                qrcode = {}
+            for i in range(0, HStategrid.gun_num):
+                if not qrcode.get(f"{i}", False):
+                    info_qrCode = {
+                        "gun_id": i,
+                        "source": i,
+                        "content": HStategrid.get_DeviceInfo(f"qrCode{i}"),
+                    }
+                    HTools.Htool_app_QR_code_update(info_qrCode)
+                    qrcode.update({f"{i}": True})
+                    HHhdlist.save_json_config({"qrcode": qrcode})
             return "dcPile"
         except Exception as e:
-            print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
-            HSyslog.log_info(f"Send_Property_to_Platform_dcPile Failed. {e}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dcPile Failed. {e} .{inspect.currentframe().f_lineno}")
             return ""
 
 
@@ -265,13 +284,11 @@ def _send_property_dc_work():
                     plamform_property(16, dc_work)
             return "dc_work"
         except Exception as e:
-            print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
-            HSyslog.log_info(f"Send_Property_to_Platform_dc_work Failed. {e}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dc_work Failed. {e} .{inspect.currentframe().f_lineno}")
             return ""
 
 
 def _send_property_dc_nonWork():
-    global qr_num
     if HStategrid.get_property_status() == 1:
         try:
             for i in HHhdlist.gun.keys():
@@ -293,30 +310,9 @@ def _send_property_dc_nonWork():
                         "dcCur": HHhdlist.gun.get(i).get(123, 0) * 10,
                     }
                     plamform_property(17, dc_nonWork)
-            print(qr_num)
-            if qr_num == 2:
-                deviceCode = HStategrid.get_DeviceInfo("deviceCode")
-                qrCode0 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:001"
-                qrCode1 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:002"
-                qrcode = [qrCode0, qrCode1]
-
-                for i in range(0, len(qrcode)):
-                    info_qrCode = {
-                        "gun_id": i,
-                        "source": i,
-                        "content": qrcode[i],
-                    }
-                    HTools.Htool_app_QR_code_update(info_qrCode)
-                qr_num = qr_num + 1
-            else:
-                if qr_num < 3:
-                    qr_num = qr_num + 1
-                else:
-                    pass
             return "dc_nonWork"
         except Exception as e:
-            print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
-            HSyslog.log_info(f"Send_Property_to_Platform_dc_nonWork Failed. {e}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dc_nonWork Failed. {e} .{inspect.currentframe().f_lineno}")
             return ""
 
 
@@ -325,15 +321,15 @@ def _send_property_meter():
         try:
             for i in HHhdlist.meter.keys():
                 if HHhdlist.gun.get(i).get(1) == 6:
-                    elec = HHhdlist.device_charfer_p.get(i).get("total_kwh")
+                    elec = HHhdlist.device_charfer_p.get(i).get("total_kwh", 0)
                 else:
                     elec = 0
 
                 if HHhdlist.device_charfer_p[i] == {}:
                     lastTrade = ""
                 else:
-                    lastTrade = HHhdlist.device_charfer_p.get(i).get("preTradeNo")
-                mailAddr = HStategrid.get_DeviceInfo("2" + str(i - 1) + "226")
+                    lastTrade = HHhdlist.device_charfer_p.get(i).get("preTradeNo", "")
+                mailAddr = HStategrid.get_DeviceInfo(f"meter{i}")
                 meter = {
                     "gunNo": i,
                     "acqTime": HHhdlist.unix_time_14(time.time()),
@@ -358,8 +354,7 @@ def _send_property_meter():
                 HStategrid.save_dcOutMeterIty(meter_log)
             return "meter"
         except Exception as e:
-            print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
-            HSyslog.log_info(f"Send_Property_to_Platform_meter Failed. {e}")
+            HSyslog.log_info(f"Send_Property_to_Platform_meter Failed. {e} .{inspect.currentframe().f_lineno}")
             return ""
 
 
@@ -372,8 +367,8 @@ def _send_property_BMS():
                         preTradeNo_data = HHhdlist.device_charfer_p.get(i)
                         BMS = {
                             "gunNo": i,
-                            "preTradeNo": preTradeNo_data.get("preTradeNo"),
-                            "tradeNo": preTradeNo_data.get("tradeNo"),
+                            "preTradeNo": preTradeNo_data.get("preTradeNo", ""),
+                            "tradeNo": preTradeNo_data.get("tradeNo", ""),
                             "socVal": HHhdlist.bms.get(i).get(106, 0),
                             "BMSVer": 11,
                             "BMSMaxVol": HHhdlist.bms.get(i).get(14, 0),
@@ -392,8 +387,7 @@ def _send_property_BMS():
                         HHhdlist.bms_sum[i] = HHhdlist.bms_sum[i] + 1
             return "BMS"
         except Exception as e:
-            print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
-            HSyslog.log_info(f"Send_Property_to_Platform_BMS Failed. {e}")
+            HSyslog.log_info(f"Send_Property_to_Platform_BMS Failed. {e} .{inspect.currentframe().f_lineno}")
             return ""
 
 
@@ -415,8 +409,7 @@ def _send_property_dc_input_meter():
                 plamform_property(20, dc_input_meter)
             return "dc_input_meter"
         except Exception as e:
-            print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
-            HSyslog.log_info(f"Send_Property_to_Platform_dc_input_meter Failed. {e}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dc_input_meter Failed. {e} .{inspect.currentframe().f_lineno}")
             return ""
 
 
@@ -457,18 +450,16 @@ def service_query_log(data_json):  # 日志查询
         info_dict = json.loads(data_json)
         data = {
             "gunNo": info_dict.get("gunNo"),
-            "startDate": info_dict.get("startDate"),
-            "stopDate": info_dict.get("stopDate"),
-            "askType": info_dict.get("askType"),
+            "startDate": info_dict.get("startDate", ""),
+            "stopDate": info_dict.get("stopDate", 0),
+            "askType": info_dict.get("askType", 0),
             "result": 11,
-            "logQueryNo": info_dict.get("logQueryNo")
+            "logQueryNo": info_dict.get("logQueryNo", "")
         }
         json_str = json.dumps(data)
         send_logQueryEvt(info_dict)
         return json_str
     except Exception as e:
-        print(f"\033[91mService_query_log .{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_query_log: {data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -477,7 +468,7 @@ def service_dev_maintain(data_json):  # 充电机状态控制
     try:
         HSyslog.log_info(f"Service_dev_maintain: {data_json}")
         info_dict = json.loads(data_json)
-        ctrlType = info_dict.get("ctrlType")
+        ctrlType = info_dict.get("ctrlType", -1)
         if ctrlType == 11:
             data = {
                 "ctrlType": info_dict.get("ctrlType"),
@@ -505,8 +496,9 @@ def service_dev_maintain(data_json):  # 充电机状态控制
                 "reason": 10
             }
             json_str = json.dumps(data)
-            subprocess.run(['supervisorctl', 'start', 'internal'])
-            subprocess.run(['supervisorctl', 'start', 'internal_ui'])
+            subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
+            subprocess.run(['supervisorctl', 'restart', 'internal'])
+            subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
         if ctrlType == 15:
             data = {
                 "ctrlType": info_dict.get("ctrlType"),
@@ -521,6 +513,7 @@ def service_dev_maintain(data_json):  # 充电机状态控制
                 "reason": 10
             }
             json_str = json.dumps(data)
+            subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
             subprocess.run(['supervisorctl', 'restart', 'internal'])
             subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
         if ctrlType == 16:
@@ -534,7 +527,6 @@ def service_dev_maintain(data_json):  # 充电机状态控制
             subprocess.run(['supervisorctl', 'stop', 'internal_ocpp'])
         return json_str
     except Exception as e:
-        print(f"\033[91mService_dev_maintain. {data_json} .{e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"Service_dev_maintain. {data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -543,7 +535,7 @@ def service_lockCtrl(data_json):  # 电子锁控制
     try:
         HSyslog.log_info(f"Service_lockCtrl: {data_json}")
         info_dict = json.loads(data_json)
-        lockParam = info_dict.get("lockParam")
+        lockParam = info_dict.get("lockParam", -1)
         if lockParam == 10:
             info = {
                 'device_type': 2,
@@ -593,7 +585,7 @@ def service_lockCtrl(data_json):  # 电子锁控制
             json_str = json.dumps(data)
             return json_str
         except Exception as e:
-            print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+            print(f"{e} .{inspect.currentframe().f_lineno}")
             data = {
                 "gunNo": info_dict.get("gunNo"),
                 "lockStatus": info_dict.get("lockStatus"),
@@ -602,7 +594,6 @@ def service_lockCtrl(data_json):  # 电子锁控制
             json_str = json.dumps(data)
             return json_str
     except Exception as e:
-        print(f"\033[91mService_lockCtrl .{data_json} .{e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"Service_lockCtrl .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -619,8 +610,6 @@ def service_issue_feeModel(data_json):  # 费率更新
         json_str = json.dumps(msg)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91mservice_issue_feeModel: {data_json}\033[0m")
         HSyslog.log_info(f"Service_issue_feeModel .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -634,8 +623,8 @@ def service_startCharge(data_json):  # 启动充电
             if HHhdlist.device_charfer_p.get(gunNo) != {}:
                 data = {
                     "gunNo": gunNo,
-                    "preTradeNo": info_dict.get(gunNo).get("preTradeNo"),
-                    "tradeNo": info_dict.get("tradeNo"),
+                    "preTradeNo": info_dict.get(gunNo).get("preTradeNo", ""),
+                    "tradeNo": info_dict.get("tradeNo", ""),
                     "startResult": 14,
                     "faultCode": 1008,
                     "vinCode": ""
@@ -644,14 +633,12 @@ def service_startCharge(data_json):  # 启动充电
                 try:
                     data = {
                         "gunNo": info_dict.get("gunNo"),
-                        "preTradeNo": info_dict.get("preTradeNo"),
+                        "preTradeNo": info_dict.get("preTradeNo", ""),
                         "tradeNo": ""
                     }
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                    print(f"output_data---data_json: {data_json}")
                     HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
                     return ""
             else:
@@ -679,14 +666,12 @@ def service_startCharge(data_json):  # 启动充电
                 try:
                     data = {
                         "gunNo": info_dict.get("gunNo"),
-                        "preTradeNo": info_dict.get("preTradeNo"),
+                        "preTradeNo": info_dict.get("preTradeNo", ""),
                         "tradeNo": tradeNo
                     }
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                    print(f"output_data---data_json: {data_json}")
                     HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
                     return ""
 
@@ -694,8 +679,8 @@ def service_startCharge(data_json):  # 启动充电
             if HHhdlist.device_charfer_p.get(gunNo) != {}:
                 data = {
                     "gunNo": gunNo,
-                    "preTradeNo": info_dict.get(gunNo).get("preTradeNo"),
-                    "tradeNo": info_dict.get("tradeNo"),
+                    "preTradeNo": info_dict.get(gunNo).get("preTradeNo", ""),
+                    "tradeNo": info_dict.get("tradeNo", ""),
                     "startResult": 14,
                     "faultCode": 1008,
                     "vinCode": ""
@@ -704,14 +689,12 @@ def service_startCharge(data_json):  # 启动充电
                 try:
                     data = {
                         "gunNo": info_dict.get("gunNo"),
-                        "preTradeNo": info_dict.get("preTradeNo"),
-                        "tradeNo": ""
+                        "preTradeNo": info_dict.get("preTradeNo", ""),
+                        "tradeNo": info_dict.get("tradeNo", "")
                     }
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                    print(f"output_data---data_json: {data_json}")
                     HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
                     return ""
             else:
@@ -740,20 +723,16 @@ def service_startCharge(data_json):  # 启动充电
                 try:
                     data = {
                         "gunNo": info_dict.get("gunNo"),
-                        "preTradeNo": info_dict.get("preTradeNo"),
+                        "preTradeNo": info_dict.get("preTradeNo", ""),
                         "tradeNo": tradeNo
                     }
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                    print(f"output_data---data_json: {data_json}")
                     HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
                     return ""
 
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -779,22 +758,18 @@ def service_authCharge(data_json):  # 鉴权结果
         }
         HTools.Htool_app_charge_control(info)  # 传入设备
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_authCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
     try:
         data = {
             "gunNo": info_dict.get("gunNo"),
-            "preTradeNo": info_dict.get("preTradeNo"),
-            "tradeNo": info_dict.get("tradeNo")
+            "preTradeNo": info_dict.get("preTradeNo", ""),
+            "tradeNo": info_dict.get("tradeNo", "")
         }
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_authCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -806,29 +781,25 @@ def service_stopCharge(data_json):  # 停止充电
         gunNo = info_dict.get("gunNo")
         if gunNo not in HHhdlist.device_charfer_p:
             HHhdlist.device_charfer_p[gunNo] = {}
-        HHhdlist.device_charfer_p[gunNo].update({"stopReason": info_dict.get("stopReason")})
+        HHhdlist.device_charfer_p[gunNo].update({"stopReason": info_dict.get("stopReason", "")})
         info = {
             "info_id": info_dict.get("info_id"),
             "gunNo": gunNo,
         }
         HTools.Htool_app_charge_control(info)  # 传入设备
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_stopCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
     try:
         data = {
             "gunNo": info_dict.get("gunNo"),
-            "preTradeNo": info_dict.get("preTradeNo"),
-            "tradeNo": info_dict.get("tradeNo")
+            "preTradeNo": info_dict.get("preTradeNo", ""),
+            "tradeNo": info_dict.get("tradeNo", "")
         }
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"output_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_stopCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -846,8 +817,6 @@ def service_rsvCharge(data_json):  # 预约充电
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_rsvCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -866,33 +835,31 @@ def service_confirmTrade(data_json):  # 充电记录上传确认
             device_session_id = HHhdlist.device_charfer_p.get(gunNo).get("device_session_id", "")
             if device_session_id == "":
                 if info_dict.get("preTradeNo") != "":
-                    device_session_id = HStategrid.get_DeviceOrder_preTradeNo(info_dict.get("preTradeNo"))
+                    device_session_id = HStategrid.get_DeviceOrder_preTradeNo(info_dict.get("preTradeNo", ""))
                 else:
-                    device_session_id = HStategrid.get_DeviceOrder_tradeNo(info_dict.get("tradeNo"))
+                    device_session_id = HStategrid.get_DeviceOrder_tradeNo(info_dict.get("tradeNo", ""))
         else:
             if info_dict.get("preTradeNo") != "":
-                device_session_id = HStategrid.get_DeviceOrder_preTradeNo(info_dict.get("preTradeNo"))
+                device_session_id = HStategrid.get_DeviceOrder_preTradeNo(info_dict.get("preTradeNo", ""))
             else:
-                device_session_id = HStategrid.get_DeviceOrder_tradeNo(info_dict.get("tradeNo"))
+                device_session_id = HStategrid.get_DeviceOrder_tradeNo(info_dict.get("tradeNo", ""))
 
         msg_body = {
-            'cloud_session_id': info_dict.get("preTradeNo"),
+            'cloud_session_id': info_dict.get("preTradeNo", ""),
             'device_session_id': device_session_id,
             'result': result
         }
         HTools.Htool_app_charge_record_response(msg_body)  # 传入设备
         if info_dict.get("preTradeNo") != "":
-            if info_dict.get("preTradeNo") == HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo"):
+            if info_dict.get("preTradeNo") == HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo", ""):
                 HHhdlist.device_charfer_p.update({gunNo: {}})
                 HHhdlist.bms_sum.update({gunNo: 1})
         else:
-            if info_dict.get("tradeNo") == HHhdlist.device_charfer_p.get(gunNo).get("tradeNo"):
+            if info_dict.get("tradeNo") == HHhdlist.device_charfer_p.get(gunNo).get("tradeNo", ""):
                 HHhdlist.device_charfer_p.update({gunNo: {}})
                 HHhdlist.bms_sum.update({gunNo: 1})
         return 0
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_confirmTrade .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -909,8 +876,6 @@ def service_groundLock_ctrl(data_json):  # 地锁控制
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_groundLock_ctrl .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -926,8 +891,6 @@ def service_gateLock_ctrl(data_json):  # 门锁控制
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_gateLock_ctrl .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -937,25 +900,20 @@ def service_orderCharge(data_json):  # 充电策略服务
         HSyslog.log_info(f"Service_orderCharge: {data_json}")
         info_dict = json.loads(data_json)
         try:
-
-            log = threading.Thread(target=set_orderCharge, args=(info_dict,), daemon=True)
+            log = threading.Thread(target=set_orderCharge, args=(info_dict,))
             log.start()
         except Exception as e:
-            print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-            print(f"input_data---data_json: {data_json}")
             HSyslog.log_info(f"Service_orderCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
             return ""
 
         data = {
-            "preTradeNo": preTradeNo,
+            "preTradeNo": info_dict.get("preTradeNo", ""),
             "result": 11,
             "reason": 10
         }
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_orderCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -963,12 +921,9 @@ def service_orderCharge(data_json):  # 充电策略服务
 def service_get_config(data_json):  # 获取配置
     try:
         HSyslog.log_info(f"Service_get_config: {data_json}")
-        qrCode_1 = HStategrid.get_DeviceInfo("qrCode0")
-        if qrCode_1 is None:
-            qrCode_1 = ""
-        qrCode_2 = HStategrid.get_DeviceInfo("qrCode1")
-        if qrCode_2 is None:
-            qrCode_2 = ""
+        qrCode = []
+        for i in range(0, HStategrid.gun_num):
+            qrCode.append(HStategrid.get_DeviceInfo(f"qrCode{i}"))
         data = {
             "equipParamFreq": HStategrid.get_DeviceInfo("equipParamFreq"),
             "gunElecFreq": HStategrid.get_DeviceInfo("gunElecFreq"),
@@ -980,13 +935,11 @@ def service_get_config(data_json):  # 获取配置
             "grndLock": HStategrid.get_DeviceInfo("grndLock"),
             "doorLock": HStategrid.get_DeviceInfo("doorLock"),
             "encodeCon": HStategrid.get_DeviceInfo("encodeCon"),
-            "qrCode": [qrCode_1, qrCode_2]
+            "qrCode": qrCode
         }
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_get_config .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -1014,7 +967,6 @@ def service_update_config(data_json):  # 更新配置
         }
         HTools.Htool_app_set_parameters(info_offlinChaLen)
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"Service_update_config .{info_offlinChaLen} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1032,31 +984,26 @@ def service_update_config(data_json):  # 更新配置
             BMS_property.set_interval(30)
             meter_property.set_interval(info_dict.get("dcMeterFreq") * 60)
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91mproperty_interval: {data_json}\033[0m")
         HSyslog.log_info(f"Service_update_config .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
     try:
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
-        qrCode0 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:001"
-        qrCode1 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:002"
-        qrcode = [qrCode0, qrCode1]
+        gun_num = HStategrid.gun_num
+        qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
 
-        for i in range(0, len(qrcode)):
+        for i in range(0, gun_num):
             info_qrCode = {
                 "gun_id": i,
                 "source": i,
-                "content": qrcode[i],
+                "content": qrCode + f"{i}",
             }
             HTools.Htool_app_QR_code_update(info_qrCode)
 
-            for gun_num in range(0, len(qrcode)):
-                HStategrid.save_DeviceInfo("qrCode" + str(gun_num), 1, qrcode[gun_num], 0)
+        for i in range(0, gun_num):
+            HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
             return 10
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91mdata_json: {data_json}\033[0m")
         HSyslog.log_info(f"qrCode .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1068,12 +1015,10 @@ def service_ota_update(new_version: str):  # 固件升级
             if charge == {}:
                 status = status + 1
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {status}")
         HSyslog.log_info(f"Service_ota_update .{status} .{e} .{inspect.currentframe().f_lineno}")
         return [-4, -4]
 
-    if status == HStategrid.get_DeviceInfo("00110"):
+    if status == HStategrid.gun_num:
         if new_version == "suss":
             try:
                 ota_info = {
@@ -1088,8 +1033,6 @@ def service_ota_update(new_version: str):  # 固件升级
                 }
                 HTools.Htool_app_upgrade_control(ota_info)
             except Exception as e:
-                print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                print(f"input_data---data_json: {new_version}")
                 HSyslog.log_info(f"Service_ota_update .{new_version} .{e} .{inspect.currentframe().f_lineno}")
                 return [-4, -4]
 
@@ -1106,8 +1049,6 @@ def service_ota_update(new_version: str):  # 固件升级
                 else:
                     HSyslog.log_info(f"ota: {new_version}")
             except Exception as e:
-                print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                print(f"input_data---data_json: {new_version}")
                 HSyslog.log_info(f"Service_ota_update .{new_version} .{e} .{inspect.currentframe().f_lineno}")
                 return [-4, -4]
     else:
@@ -1142,9 +1083,8 @@ def service_time_sync(data_json):  # 时钟同步
         subprocess.run(command_time, shell=True, check=True, capture_output=True, text=True)
         command = f"sudo hwclock --systohc"
         subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+        return 0
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_time_sync .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
@@ -1168,12 +1108,12 @@ def service_connectSucc(data_json):  # 连接成功
                 send_firmwareEvt()
                 send_verInfoEvt("DTU")
                 send_askConfigEvt()
+                command_time = f"sudo cp /opt/hhd/ex_cloud/DeviceCode.json /root"
+                subprocess.run(command_time, shell=True, check=True, capture_output=True, text=True)
                 break
-        print(f"\033[92monlink_status: {HStategrid.link_init_status}\033[91m")
+        HSyslog.log_info(f"onlink_status: {HStategrid.link_init_status}")
         return HStategrid.get_link_init_status()
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_connectSucc .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1183,11 +1123,9 @@ def service_disConnected(data_json):  # 断开连接
         HSyslog.log_info(f"Service_disConnected: {data_json}")
         info_dict = json.loads(data_json)
         HStategrid.set_link_init_status(info_dict.get("onlink_status"))
-        print(f"onlink_status: {HStategrid.link_init_status}")
+        HSyslog.log_info(f"onlink_status: {HStategrid.link_init_status}")
         return HStategrid.link_init_status
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_disConnected .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1211,8 +1149,6 @@ def service_trigEvevtReply(data_json):  # 事件回调
                 send_event_queue.put(HStategrid.ack_num.get(msgid))
                 HStategrid.ack_num.pop(msgid)
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_trigEvevtReply .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1233,8 +1169,6 @@ def service_certSet(data_json):  # 设置属性
 
         return 0
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_certSet .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1243,14 +1177,11 @@ def service_deregCodeGet(data_json):  # 获取注册码
     try:
         HSyslog.log_info(f"Service_deregCodeGet: {data_json}")
         device_reg_code = HStategrid.get_DeviceInfo("registerCode")
-        print(device_reg_code)
-        if device_reg_code is not None or device_reg_code != "":
+        if device_reg_code is not None and device_reg_code != "":
             return device_reg_code
         else:
             return ""
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno} .1058\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_deregCodeGet .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1259,11 +1190,9 @@ def service_uidGet(data_json):  # 获取设备UID
     try:
         HSyslog.log_info(f"Service_uidGet: {data_json}")
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
-        if deviceCode is not None or deviceCode != "":
+        if deviceCode is not None and deviceCode != "":
             return deviceCode
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_uidGet .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1280,52 +1209,51 @@ def service_mainres(data_json):  # 设备状态查询
         HSyslog.log_info(json_str)
         return json_str
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"input_data---data_json: {data_json}")
         HSyslog.log_info(f"Service_mainres .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return ""
 
 
 def send_firmwareEvt():
-    param_id = [102, 135, 103, 110, 121, 113, 114, 115, 117, 101, 104, 111, 129]
+    param_id = [135, 103, 110, 121, 113, 114, 115, 117, 101, 104, 111, 129, 141]
     get_data = {
         "device_type": 0,
         "device_num": 0,
         "model": 0,
+        "source": 0,
         "count": len(param_id),
         "param_id": param_id,
     }
     HTools.Htool_app_fetch_parameter(get_data)
     time.sleep(1)
-    if HStategrid.get_DeviceInfo("20226") is None or HStategrid.get_DeviceInfo("20226") == "":
-        param_id_gun = [226]
-        for i in range(0, HStategrid.get_DeviceInfo("00110")):
-            get_data_gun = {
-                "device_type": 2,
-                "device_num": i,
-                "model": 0,
-                "count": len(param_id_gun),
-                "param_id": param_id_gun,
-            }
-            HTools.Htool_app_fetch_parameter(get_data_gun)
-            time.sleep(1)
     try:
         eleModelId = HStategrid.get_DeviceInfo("eleModelId")
         serModelId = HStategrid.get_DeviceInfo("serModelId")
-        if HStategrid.get_DeviceInfo("00102") is not None:
-            stakeModel = str(HStategrid.get_DeviceInfo("00102"))
+        HStategrid.gun_num = HStategrid.get_DeviceInfo("00110")
+        if HStategrid.get_DeviceInfo("00141") is not None:
+            if HStategrid.get_DeviceInfo("00141") == 0 or HStategrid.get_DeviceInfo("00141") == 1:
+                stakeModel = f"HHD_DC_All-in-One PC_{HStategrid.gun_num}"
+                HHhdlist.device_type = 1
+            else:
+                stakeModel = f"HHD_Qunchong PC_{HStategrid.gun_num}"
+                HHhdlist.device_type = 2
         else:
             stakeModel = "HHD_DC_2"
         if eleModelId is None:
             eleModelId = ""
         if serModelId is None:
             serModelId = ""
-        if HStategrid.get_DeviceInfo("20226") is not None:
-            outMeter1 = HStategrid.hex_to_ascii(HStategrid.get_DeviceInfo("20226"))
-            outMeter2 = HStategrid.hex_to_ascii(HStategrid.get_DeviceInfo("21226"))
+        outMeter = []
+        if HStategrid.get_DeviceInfo("meter1") is not None and HStategrid.get_DeviceInfo("meter1") != "":
+            for i in range(1, HStategrid.gun_num + 1):
+                outMeter.append(HStategrid.hex_to_ascii(HStategrid.get_DeviceInfo(f"meter{i}")))
         else:
-            outMeter1 = HStategrid.hex_to_ascii("000000000055")
-            outMeter2 = HStategrid.hex_to_ascii("000000000066")
+            for i in range(1, HStategrid.gun_num + 1):
+                if i % 2 == 1:
+                    outMeter.append(HStategrid.hex_to_ascii("{:02}".format(i) + "000000000055"))
+                    HStategrid.save_DeviceInfo(f"meter{i}", 1, "{:02}".format(i) + "000000000055", 0)
+                if i % 2 == 0:
+                    outMeter.append(HStategrid.hex_to_ascii("{:02}".format(i) + "000000000066"))
+                    HStategrid.save_DeviceInfo(f"meter{i}", 1, "{:02}".format(i) + "000000000066", 0)
         simNo = HStategrid.get_DeviceInfo("00102")
         if simNo is None:
             simNo = ""
@@ -1338,42 +1266,43 @@ def send_firmwareEvt():
             "simMac": str(HStategrid.get_mac_address("eth1")),
             "devSn": str(HStategrid.get_DeviceInfo("deviceCode")),
             "devType": 12,
-            "portNum": HStategrid.get_DeviceInfo("00110"),
+            "portNum": HStategrid.gun_num,
             "longitude": 0,
             "latitude": 0,
             "height": 0,
             "gridType": 10,
             "btMac": "",
             "meaType": 10,
-            "otRate": HStategrid.get_DeviceInfo("00110") * HStategrid.get_DeviceInfo("00117") * 0.01,
+            "otRate": HStategrid.gun_num * HStategrid.get_DeviceInfo("00117") * 0.01,
             "otMinVol": float(HStategrid.get_DeviceInfo("00114") * 0.1),
             "otMaxVol": float(HStategrid.get_DeviceInfo("00113") * 0.1),
             "otCur": HStategrid.get_DeviceInfo("00115"),
             "inMeter": [],
-            "outMeter": [outMeter1, outMeter2],
+            "outMeter": outMeter,
             "CT": 0,
             "isGateLock": 10,
             "isGroundLock": 10
         }
         if HHhdlist.device_charfer_p == {}:
-            for i in range(0, HStategrid.get_DeviceInfo("00110")):
+            for i in range(0, HStategrid.gun_num):
                 HHhdlist.device_charfer_p[i + 1] = {}
         plamform_event(0, info_dict)
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
-        qrCode0 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:001"
-        qrCode1 = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:002"
-        qrcode = [qrCode0, qrCode1]
-
-        for i in range(0, len(qrcode)):
+        qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
+        qrcode_ack = {}
+        for i in range(0, HStategrid.gun_num):
             info_qrCode = {
                 "gun_id": i,
                 "source": i,
-                "content": qrcode[i],
+                "content": qrCode + f"{i}",
             }
             HTools.Htool_app_QR_code_update(info_qrCode)
+            qrcode_ack.update({i: True})
+        HHhdlist.save_json_config({"qrcode": qrcode_ack})
+        for i in range(0, HStategrid.gun_num):
+            HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
         return 0
     except Exception as e:
-        print(f"\033[91msend_firmwareEvts error: {e} .{inspect.currentframe().f_lineno}\033[0m")
         HSyslog.log_info(f"send_firmwareEvts error: {e} .{inspect.currentframe().f_lineno}")
         return -1
 
@@ -1435,6 +1364,9 @@ def send_askConfigEvt():
         global property_start
         global dcPile_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
         try:
+            qrCode = []
+            for i in range(0, HStategrid.gun_num):
+                qrCode.append(HStategrid.get_DeviceInfo(f"qrCode{i}"))
             info_dict = {
                 "equipParamFreq": HStategrid.get_DeviceInfo("equipParamFreq"),
                 "gunElecFreq": HStategrid.get_DeviceInfo("gunElecFreq"),
@@ -1446,11 +1378,10 @@ def send_askConfigEvt():
                 "grndLock": HStategrid.get_DeviceInfo("grndLock"),
                 "doorLock": HStategrid.get_DeviceInfo("doorLock"),
                 "encodeCon": HStategrid.get_DeviceInfo("encodeCon"),
-                "qrCode": [HStategrid.get_DeviceInfo("qrCode0"), HStategrid.get_DeviceInfo("qrCode1")]
+                "qrCode": qrCode
             }
             time.sleep(0.1)
         except Exception as e:
-            print(f"Send_askConfigEvt .{info_dict} .{e} .{inspect.currentframe().f_lineno}")
             HSyslog.log_info(f"Send_askConfigEvt .{info_dict} .{e} .{inspect.currentframe().f_lineno}")
         try:
             HStategrid.set_flaut_status(1)
@@ -1467,8 +1398,6 @@ def send_askConfigEvt():
             set_data_dev_config(json.dumps(info_dict))
             return 0
         except Exception as e:
-            print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-            print(f"\033[91mproperty_interval: {info_dict}\033[0m")
             HSyslog.log_info(f"Send_askConfigEvt .{info_dict} .{e} .{inspect.currentframe().f_lineno}")
             return -1
     else:
@@ -1499,7 +1428,6 @@ def send_verInfoEvt(device_type):
             }
             return plamform_event(13, info_dict)
         except Exception as e:
-            print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
             HSyslog.log_info(f"Send_verInfoEvt .{e} .{inspect.currentframe().f_lineno}")
             return -1
 
@@ -1645,7 +1573,6 @@ def get_log(info_dict: dict):
         all_files = gz_files + normal_files
         sorted_files = sorted(all_files, key=os.path.getmtime)
         for file in sorted_files:
-            print(file)
             if file.endswith('.gz'):
                 with gzip.open(file, 'rt', encoding='gbk', errors='ignore') as file:  # 使用 'rt' 模式读取文本内容
                     for line in file:
@@ -1731,21 +1658,56 @@ def set_orderCharge(info_dict: dict):
     num = info_dict.get("num")
     validTime = info_dict.get("validTime")
     kw = info_dict.get("kw")
+    charger_power = []
+    for i in range(0, num):
+        if i == 0 and validTime[i] != "0000":
+            charger_power.append({"start_time": "0000", "stop_time": validTime[i], "kw": kw[num - 1]})
+        elif i == num - 1 and validTime[i] != "2400":
+            charger_power.append({"start_time": validTime[i], "stop_time": "2400", "kw": kw[i]})
+        else:
+            if i == num - 1 and validTime[i] == "2400":
+                pass
+            else:
+                charger_power.append({"start_time": validTime[i], "stop_time": validTime[i + 1], "kw": kw[i]})
+
     gunNo = None
     for gun, data in HHhdlist.device_charfer_p.items():
-        if HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo") == preTradeNo:
+        if data.get("preTradeNo") == preTradeNo:
             gunNo = gun
 
-    for i in range(0, num):
+    if gunNo is not None and charger_power != []:
         while True:
-            if validTime[i] == HStategrid.get_current_time_hhmm():
-                info_orderCharge = {
-                    'device_type': 2,
-                    'device_num': gunNo,
-                    'count': 1,
-                    'items': [{"id": 169, "type": 0, "intvalue": int(kw[i]) * 10}]
-                }
-                HTools.Htool_app_set_parameters(info_orderCharge)
-                break
-            else:
-                time.sleep(30)
+            for power in charger_power:
+                if preTradeNo == HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo"):
+                    if int(power.get("stop_time")) >= int(HStategrid.get_current_time_hhmm()) > int(power.get("start_time")):
+                        HSyslog.log_info(f"充电电压： {HHhdlist.gun.get(gunNo).get(112)}")
+                        HSyslog.log_info(f"充电电流： {HHhdlist.gun.get(gunNo).get(113)}")
+                        HSyslog.log_info(f"充电功率： {HHhdlist.gun.get(gunNo).get(112) * HHhdlist.gun.get(gunNo).get(113)}")
+                        wk = power.get("kw") * 10000
+                        HSyslog.log_info(f"限功率： {wk}")
+                        if abs((HHhdlist.gun.get(gunNo).get(112) * HHhdlist.gun.get(gunNo).get(113)) - (power.get("kw") * 10000)) > 50000:
+                            info_orderCharge = {
+                                'device_type': 2,
+                                'device_num': gunNo - 1,
+                                "source": 0,
+                                'count': 1,
+                                'items': [{"id": 169, "type": 0, "intvalue": power.get("kw") * 10}]
+                            }
+                            HTools.Htool_app_set_parameters(info_orderCharge)
+                            time.sleep(30)
+                        else:
+                            time.sleep(30)
+                    else:
+                        time.sleep(1)
+                else:
+                    info_orderCharge = {
+                        'device_type': 2,
+                        'device_num': gunNo - 1,
+                        'count': 1,
+                        "source": 0,
+                        'items': [{"id": 169, "type": 0, "intvalue": 25000}]
+                    }
+                    HTools.Htool_app_set_parameters(info_orderCharge)
+                    return False
+    else:
+        return False

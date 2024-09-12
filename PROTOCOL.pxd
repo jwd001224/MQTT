@@ -71,8 +71,8 @@ cdef extern from r"output/release/include/protocol_data_def.h":
         uint32_t otMinVol				        # 17		额定功率
         uint32_t otMaxVol				        # 18		输出最大电压
         uint32_t otCur					        # 19		输出最大电流
-        char inMeter[0][7]                      # 20		交流输入电表地址#压缩BCD
-        char outMeter[2][7]	                    # 21		计量用电能表地址#压缩BCD
+        char inMeter[0][8]                     # 20		交流输入电表地址#压缩BCD
+        char outMeter[24][8]	                # 21		计量用电能表地址#压缩BCD
         uint32_t CT						        # 22		电流互感器系数 默认值1
         uint8_t isGateLock			            # 23		是否有智能门锁
         uint8_t isGroundLock			        # 24		是否有地锁
@@ -96,7 +96,7 @@ cdef extern from r"output/release/include/protocol_data_def.h":
         uint32_t grndLock						# 7		地锁监测上送频率
         uint32_t doorLock						# 8		网门锁监测上送频率
         uint32_t encodeCon						# 9		报文加密
-        char qrCode[2][256]                     # 10	二维码数据
+        char qrCode[24][256]                     # 10	二维码数据
      
     #设备日志查询服务下发参数
     ctypedef struct evs_service_query_log:
@@ -345,8 +345,8 @@ cdef extern from r"output/release/include/protocol_data_def.h":
     ctypedef struct evs_service_orderCharge:
         char preTradeNo[40 + 1]		# 1	订单流水号
         uint8_t num			        # 2	策略配置时间段数量
-        uint8_t validTime[10][5]    # 3	策略生效时间#字符串数组。时间格式采用HHMM，24小时制。策略范围24小时内最多五段 例如 ：[time1,time2,time3…]。
-        uint16_t kw[10]		        # 4	策略配置功率#整型数组。功率精确到0.1KW[kw1,kw2,kw3…]
+        uint8_t validTime[24][5]    # 3	策略生效时间#字符串数组。时间格式采用HHMM，24小时制。策略范围24小时内最多五段 例如 ：[time1,time2,time3…]。
+        uint16_t kw[24]		        # 4	策略配置功率#整型数组。功率精确到0.1KW[kw1,kw2,kw3…]
 
     #有序充电策略服务设备回复参数
     ctypedef struct evs_service_feedback_orderCharge:
@@ -522,8 +522,8 @@ cdef extern from r"output/release/include/protocol_data_def.h":
     ctypedef struct evs_property_dc_input_meter:
         uint8_t gunNo				# 充电枪编号
         char acqTime[15 + 1]		# 采集时间
-        uint8_t mailAddr[7]         # 通信地址 压缩BCD
-        uint8_t meterNo[7]	        # 电表表号 压缩BCD
+        uint8_t mailAddr[8]         # 通信地址 压缩BCD
+        uint8_t meterNo[8]	        # 电表表号 压缩BCD
         char assetId[32 + 1]		# 电表资产编码
         uint32_t sumMeter			# 电表底值
         uint32_t ApElect			# A相正向总电量
@@ -536,8 +536,8 @@ cdef extern from r"output/release/include/protocol_data_def.h":
     ctypedef struct evs_property_meter:
         uint8_t gunNo				# 1	充电枪编号
         char acqTime[15 + 1]		# 2	采集时间
-        uint8_t mailAddr[7]        # 3	通信地址 压缩BCD
-        uint8_t meterNo[7]	        # 4	表号 压缩BCD
+        uint8_t mailAddr[8]        # 3	通信地址 压缩BCD
+        uint8_t meterNo[8]	        # 4	表号 压缩BCD
         char assetId[32 + 1]		# 5	电表资产编码
         uint32_t sumMeter			# 6	电表底值
         char lastTrade[40 + 1]		# 7	最后交易流水
@@ -717,7 +717,6 @@ cdef inline get_DeviceInfo(data_id):
 cdef inline timestamp_to_datetime(timestamp:int):
     try:
         dt_object = datetime.fromtimestamp(timestamp)
-        print(dt_object)
         time_data = {
             "info_id": EVS_TIME_SYNC,
             "time": timestamp,

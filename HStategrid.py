@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import subprocess
+import threading
 import time
 from datetime import datetime
 import sqlite3
@@ -17,6 +18,9 @@ link_init_status = 0
 property_status = 0
 flaut_status = 0
 net_status = 0
+gun_num = 0
+
+DEBUG_MODE = True
 
 platform_data = {
     "netType": 13,
@@ -53,88 +57,50 @@ device_hard = {
 ack_num = {}
 
 flaut_warning_type = {
-    "device": {
-        "regular": {},
-        "flaut": {
-            3030: [],
-            3031: [47],
-            3032: [16, 72],
-            3034: [21, 75],
-            3035: [400],
-            3038: [31, 102, 103, 104, 406, 445],
-            3039: [],
-            3040: [30, 407, 409],
-            3042: [39, 167],
-            3048: [],
-            3049: [95],
-            3055: [110, 501],
-            3056: [22, 40, 92, 93, 446],
-            3064: [],
-            3065: [96, 97, 98, 506, 507, 508],
-            3073: [28, 29, 440, 441, 442, 443, 444, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457],
-            3074: [],
-            3075: [],
-            3076: [],
-            3077: [],
-            3078: [],
-            3079: [],
-            3080: [],
-            3081: [],
-            3083: [],
-            3084: [17, 73],
-            3085: [41, 74],
-        },
-        "warn": {
-            3041: [32],
-            3052: [80, 258],
-            3067: [],
-            3068: [],
-            3086: [46],
-        }
-    },
     "gun": {
         "regular": {
-            1000: [13, 191, 227],  # 充满停止
-            1001: [51, 52],  # 触控屏手动停止
-            1002: [3, 4, 5, 11, 9, 24],  # 后台停止充电
+            1000: [13, 191, 227, 191],  # 充满停止
+            1001: [2, 51, 52, 59],  # 触控屏手动停止
+            1002: [3, 4, 5, 11, 9, 24, 599],  # 后台停止充电
             1003: [33],  # 达到设定充电时长停止
             1004: [37],  # 达到设定充电电量停止
-            1005: [34],  # 达到设置充电金额停止
-            1006: [],  # 达到离线停机条件
-            1007: [35, 36, 57, 228, 229],  # 达到 SOC 终止条件停止
+            1005: [14, 34],  # 达到设置充电金额停止
+            1006: [12],  # 达到离线停机条件
+            1007: [6, 35, 36, 57, 228, 229],  # 达到 SOC 终止条件停止
             1008: [20],
             1009: [1],
             1010: [],
             1011: [230]
         },
         "flaut": {
+            3000: [23, 38],
             3033: [15, 71],
             3036: [261],
             3037: [],
             3043: [58, 91],
-            3044: [45],
+            3044: [45, 50],
             3045: [99],
-            3046: [100, 101],
+            3046: [100, 101, 106, 169, 170, 171],
             3047: [108],
             3050: [152, 153, 154, 156, 157, 158, 159, 166, 604, 605],
-            3051: [94, 606, 607],
+            3051: [94, 606, 607, 412],
             3054: [19, 76, 77, 78, 79],
-            3057: [],
-            3058: [],
+            3057: [175, 617],
+            3058: [48],
             3059: [],
             3060: [],
             3061: [],
             3062: [25, 26, 27],
             3069: [165],
-            3070: [601, 603],
+            3070: [601, 603, 53, 54, 60, 595, 596, 598, 600, 601, 608, 609],
             3071: [602, 610, 611],
             3072: [168],
             3082: [55],
-            4008: [42, 43, 112, 121, 122, 124, 125, 126, 401, 402],
+            4008: [42, 43, 112, 121, 122, 124, 125, 126, 401, 402, 49, 519, 613],
             4009: [131, 132, 133, 403],
             4010: [135, 136, 405],
             4011: [134, 404],
-            4012: [138, 408],
+            4012: [138, 408, 614],
             4013: [18, 105],
             4014: [],
             4015: [],
@@ -145,50 +111,82 @@ flaut_warning_type = {
             4021: [],
             4022: [],
             5001: [],
-            5002: [187],
-            5003: [192, 193],
-            5004: [202],
-            5005: [197],
-            5006: [224],
-            5007: [243],
-            5008: [56, 209],
+            5002: [187, 188, 189, 190],
+            5003: [192, 193, 194, 195, 196],
+            5004: [202, 203, 204, 205, 206, 207, 208],
+            5005: [197, 198, 199, 200, 201],
+            5006: [224, 174, 225, 226],
+            5007: [243, 244, 245],
+            5008: [56, 209, 210, 211, 212, 222, 223],
             5009: [237],
-            5010: [],
-            5011: [184],
-            5012: [246, 249, 250, 251, 252, 253, 254, 255, 256],
-            5013: [],
+            5010: [181, 182, 183],
+            5011: [184, 185, 186],
+            5012: [246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256],
+            5013: [173],
             5014: [155, 232],
             5015: [233, 234],
             5016: [],
-            5017: [],
+            5017: [160, 161, 162, 163, 164],
             5018: [231, 239, 242, 257],
-            5019: [213],
+            5019: [213, 176],
             5020: [214],
             5021: [215],
             5022: [216],
             5023: [217],
             5024: [218, 236],
             5025: [219],
-            5026: [220, 235],
-            5027: [],
+            5026: [220, 235, 221],
+            5027: [151],
             5028: [],
             5029: [238, 241],
             5030: [],
             5031: [],
             5032: [],
             5033: [],
-            5034: [240],
-            5035: [],
+            5034: [240, 137],
+            5035: [139, 618],
             5037: [],
             5038: [],
+            3030: [177, 597],
+            3031: [47],
+            3032: [16, 72],
+            3034: [21, 75, 515, 516, 517, 518],
+            3035: [400],
+            3038: [31, 102, 103, 104, 406, 445],
+            3039: [172, 410],
+            3040: [30, 407, 409, 413],
+            3042: [39, 167],
+            3048: [503, 504, 505],
+            3049: [95],
+            3055: [110, 501, 109],
+            3056: [22, 40, 92, 93, 446],
+            3064: [],
+            3065: [96, 97, 98, 506, 507, 508, 107],
+            3073: [28, 29, 440, 441, 442, 443, 444, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458],
+            3074: [],
+            3075: [],
+            3076: [510, 511, 512, 513, 514, 520],
+            3077: [521, 522],
+            3078: [],
+            3079: [],
+            3080: [],
+            3081: [],
+            3083: [],
+            3084: [17, 73],
+            3085: [41, 74],
         },
         "warn": {
-            3053: [81, 82, 259, 260],
+            3053: [81, 82, 259, 260, 113, 114, 268],
             3063: [],
             3066: [],
-            4017: [123],
+            4017: [123, 509],
             4023: [],
             5036: [],
+            3041: [32, 411],
+            3052: [80, 258],
+            3067: [44, 612],
+            3068: [],
+            3086: [46],
         }
     }
 }
@@ -425,15 +423,20 @@ def get_ip_from_resolv():
     if os.path.getsize("/etc/resolv.conf") == 0:
         with open("/etc/resolv.conf", 'a') as file:
             file.write("nameserver 8.8.8.8\n")
-        return "10.111.186.1"
+        if not DEBUG_MODE:
+            return "10.111.186.1"
+        else:
+            return "8.8.8.8"
     else:
         with open("/etc/resolv.conf", 'r') as file:
             lines = file.readlines()
             # 提取最后一行中的 IP 地址
             for line in lines:
                 if line.startswith("nameserver"):
-                    return "10.111.186.1"
-    return "10.111.186.1"
+                    if not DEBUG_MODE:
+                        return "10.111.186.1"
+                    else:
+                        return "8.8.8.8"
 
 
 def ping_ip(IP):
@@ -503,7 +506,6 @@ def get_net():
             platform_data["sigVal"] = 0
             net_status = 0
     except Exception as e:
-        print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
         HSyslog.log_info(f"get_net: {return_code} . {ping_output} .{e} .{inspect.currentframe().f_lineno}")
 
     try:
@@ -520,7 +522,6 @@ def get_net():
         else:
             platform_data["netType"] = 10
     except Exception as e:
-        print("\033[91m" + f"{e} .{inspect.currentframe().f_lineno}" + "\033[0m")
         HSyslog.log_info(f"get_net: {return_code} . {ping_output} .{e} .{inspect.currentframe().f_lineno}")
 
 
@@ -545,10 +546,6 @@ def get_ping():
 def disable_network_interface(interface):
     command = f"sudo ifconfig {interface} down"
     subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
-
-
-# 调用函数禁用 eth0 接口
-disable_network_interface("eth0")
 
 
 def get_mac_address(interface):
@@ -690,6 +687,12 @@ def get_current_time_hhmm():
     return hhmm_format
 
 
+def time_unix_14(date_time_str):
+    date_time_obj = datetime.strptime(date_time_str, '%Y%m%d%H%M%S')
+    timestamp = date_time_obj.timestamp()
+    return int(timestamp)
+
+
 def datadb_init():
     conn = sqlite3.connect(data_path)
     cur = conn.cursor()
@@ -795,6 +798,9 @@ def datadb_init():
 
     conn.commit()
     conn.close()
+    db_delete = threading.Thread(target=delete_db)
+    db_delete.start()
+    HSyslog.log_info("db_delete")
 
 
 def save_DeviceInfo(data_id, data_type, data_str, data_int):
@@ -1058,3 +1064,56 @@ def get_log_dcBmsRunIty(startDate, stopDate):
     conn.commit()
     conn.close()
     return dcBmsRunIty
+
+
+def delete_db():
+    delete_time = get_DeviceInfo("delete_time")
+    if delete_time is None or delete_time == 0:
+        save_DeviceInfo("delete_time", 2, "", int(time.time()))
+    elif int(time.time()) - delete_time >= 86400 * 15:
+        delete_dcOutMeterIty()
+        delete_dcBmsRunIty()
+        delete_DeviceOrder()
+    else:
+        time.sleep(86400)
+
+
+def delete_dcOutMeterIty():
+    conn = sqlite3.connect(data_path)
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM dcOutMeterIty')
+    result = cur.fetchall()
+    for info in result:
+        print(info)
+        if int(time.time()) - time_unix_14(info[2]) >= 86400 * 30:
+            cur.execute("DELETE FROM dcOutMeterIty WHERE acqTime=?", (info[2],))
+    conn.commit()
+    conn.close()
+    return result
+
+
+def delete_dcBmsRunIty():
+    conn = sqlite3.connect(data_path)
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM dcBmsRunIty')
+    result = cur.fetchall()
+    for info in result:
+        if int(time.time()) - info[16] >= 86400 * 30:
+            cur.execute("DELETE FROM dcBmsRunIty WHERE get_time=?", (info[16],))
+    conn.commit()
+    conn.close()
+    return result
+
+
+def delete_DeviceOrder():
+    conn = sqlite3.connect(data_path)
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM DeviceOrder')
+    result = cur.fetchall()
+    for info in result:
+        if int(time.time()) - info[7] >= 86400 * 90:
+            cur.execute("DELETE FROM DeviceOrder WHERE chargeEndTime=?", (info[7],))
+            print(info)
+    conn.commit()
+    conn.close()
+    return result

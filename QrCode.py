@@ -5,7 +5,8 @@ import qrcode
 
 # 读取 Excel 文件
 file_path = '出厂编号.xlsx'  # 替换为你的文件路径
-df = pd.read_excel(file_path, sheet_name='团风', usecols=[0, 3], names=['FirstColumn', 'FourthColumn'])  # 使用工作表名称
+city_path = "潜江"
+df = pd.read_excel(file_path, sheet_name=city_path, usecols=[0, 2], names=['FirstColumn', 'FourthColumn'])  # 使用工作表名称
 
 # 创建 QRcode 目录
 if not os.path.exists('QRcode'):
@@ -31,13 +32,16 @@ for index, row in df.iterrows():
         img = qr.make_image(fill='black', back_color='white')
 
         # 获取第四列的字符串并创建目录
-        folder_name = row['FourthColumn']
-        folder_path = os.path.join('QRcode', folder_name)
+        qr_name = row['FourthColumn']
+        folder_path = os.path.join('QRcode', city_path)
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
+        qr_path = os.path.join(folder_path, qr_name)
+        if not os.path.exists(qr_path):
+            os.makedirs(qr_path)
 
         # 保存二维码图片
-        img_path = os.path.join(folder_path, f'枪{i}.png')
+        img_path = os.path.join(qr_path, f'{qr_name}枪{i}.png')
         img.save(img_path)
 
         print(f'二维码已保存到: {img_path}')

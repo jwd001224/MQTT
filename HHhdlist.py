@@ -3,8 +3,11 @@ import queue
 import threading
 from datetime import datetime
 from enum import Enum
+import json
 
 ota_version = None
+config_file = '/opt/hhd/ex_cloud/DeviceCode.json'
+device_type = None
 
 device_mqtt_status = False
 qr_queue = queue.Queue()
@@ -112,6 +115,11 @@ Gun_Pistol = {
     10: None,
     11: None,
     12: None,
+    13: None,
+    14: None,
+    15: None,
+    16: None,
+    17: None,
     110: None,
     111: None,
     112: None,
@@ -133,6 +141,9 @@ Gun_Pistol = {
     128: None,
     129: None,
     130: None,
+    131: None,
+    132: None,
+    133: None,
 }
 
 #  充电系统遥测
@@ -158,6 +169,7 @@ Power_Pistol = {
     2: None,
     3: None,
     4: None,
+    5: None,
     110: None,
     111: None,
     112: None,
@@ -168,6 +180,12 @@ Power_Pistol = {
     117: None,
     118: None,
     119: None,
+    120: None,
+    121: None,
+    122: None,
+    123: None,
+    124: None,
+    125: None,
 }
 
 #  功率单元遥测
@@ -188,6 +206,8 @@ Power_Crrl_Plug = {
     4: None,
     5: None,
     6: None,
+    7: None,
+    8: None,
 }
 
 #  BMS遥测
@@ -225,6 +245,8 @@ BMS_disposable_Pistol = {
     111: None,
     112: None,
     113: None,
+    114: None,
+    115: None,
 }
 
 #  电表遥测
@@ -294,3 +316,41 @@ def set_apn(file_path='/etc/ppp/peers/quectel-chat-connect', old_apn='3gnet', ne
         file.writelines(modified_lines)
 
     print(f"The APN in {file_path} has been modified from '{old_apn}' to '{new_apn}'.")
+
+
+def read_json_config(config_type, file_path=config_file):
+    try:
+        with open(file_path, 'r') as config_file:
+            config_data = json.load(config_file)
+            if config_data:
+                return config_data.get(config_type)
+    except FileNotFoundError:
+        print(f"文件 {file_path} 未找到。")
+    except json.JSONDecodeError:
+        print(f"无法解析文件 {file_path}。")
+    return None
+
+
+def save_json_config(config_data, file_path=config_file):
+    # 如果文件存在，先读取现有的配置
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r') as config_file:
+                existing_config = json.load(config_file)
+        except json.JSONDecodeError:
+            print(f"无法解析文件 {file_path}。使用空配置。")
+            existing_config = {}
+    else:
+        # 如果文件不存在，初始化为空配置
+        existing_config = {}
+
+    # 更新现有配置
+    existing_config.update(config_data)
+
+    # 保存更新后的配置
+    try:
+        with open(file_path, 'w') as config_file:
+            json.dump(existing_config, config_file, indent=4)
+        print(f"配置成功更新并保存到 {file_path}")
+    except Exception as e:
+        print(f"保存配置文件失败: {e}")

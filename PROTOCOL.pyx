@@ -863,9 +863,12 @@ cdef int callback_service_orderCharge(evs_service_orderCharge *param, evs_servic
         "info_id": EVS_ORDERLY_CHARGE_SRV,
         "preTradeNo": char_to_str(param.preTradeNo),
         "num": param.num,
-        "validTime": char_to_str(param.validTime),
-        "kw": char_to_str(param.kw)
+        "validTime": [],
+        "kw": []
     }
+    for i in range(0, param.num):
+        post_data["validTime"].append(char_to_str(param.validTime[i]))
+        post_data["kw"].append(param.kw[i])
 
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
@@ -932,8 +935,8 @@ cdef int callback_service_get_config(evs_data_dev_config *result):
         result.grndLock = dict_info.get("grndLock")  # 8		地锁监测上送频率
         result.doorLock = dict_info.get("doorLock")  # 9		网门锁监测上送频率
         result.encodeCon = dict_info.get("encodeCon")  # 10	报文加密
-        result.qrCode[0] = str_to_char(dict_info.get("qrCode")[0])  # 11	二维码数据
-        result.qrCode[1] = str_to_char(dict_info.get("qrCode")[1])  # 11	二维码数据
+        for i in range(0, len(dict_info.get("qrCode"))):
+            result.qrCode[i] = str_to_char(dict_info.get("qrCode")[i])  # 11	二维码数据
         HSyslog.log_info(f"Reply_to_Platform service_get_config: {data_dev_config}")
     except Exception as e:
         print(red_char + f"{e}" + init_char)
@@ -956,8 +959,10 @@ cdef int callback_service_update_config(evs_data_dev_config *param, int *result)
         "grndLock": param.grndLock,
         "doorLock": param.doorLock,
         "encodeCon": param.encodeCon,
-        "qrCode": [char_to_str(param.qrCode[0]), char_to_str(param.qrCode[1])]
+        "qrCode": []
     }
+    for i in range(0, len(param.qrCode)):
+        post_data["qrCode"].append(char_to_str(param.qrCode[i]))
 
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
@@ -1286,8 +1291,8 @@ def set_event_fireware_info(json_str: str):
         event_fireware_info.otCur = info_dict.get("otCur", 0)
         #event_fireware_info.inMeter = info_dict.get("inMeter", "")
 
-        event_fireware_info.outMeter[0] = str_to_char(info_dict.get("outMeter", "")[0])
-        event_fireware_info.outMeter[1] = str_to_char(info_dict.get("outMeter", "")[1])
+        for i in range(0, len(info_dict.get("outMeter"))):
+            event_fireware_info.outMeter[i] = str_to_char(info_dict.get("outMeter", "")[i])
 
         event_fireware_info.CT = info_dict.get("CT", 0)
         event_fireware_info.isGateLock = info_dict.get("isGateLock", 0)
@@ -1331,8 +1336,8 @@ def set_data_dev_config(json_str):
         data_dev_config.grndLock = info_dict.get("grndLock", 60)
         data_dev_config.doorLock = info_dict.get("doorLock", 60)
         data_dev_config.encodeCon = info_dict.get("encodeCon", 0)
-        data_dev_config.qrCode[0] = str_to_char(info_dict.get("qrCode", "")[0])
-        data_dev_config.qrCode[1] = str_to_char(info_dict.get("qrCode", "")[1])
+        for i in range(0, len(info_dict.get("qrCode", ""))):
+            data_dev_config.qrCode[i] = str_to_char(info_dict.get("qrCode", "")[i])
         # print(f"data_dev_config: {data_dev_config}")
         return 0
     except Exception as e:

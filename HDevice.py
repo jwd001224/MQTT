@@ -6,6 +6,7 @@ from paho.mqtt import client as mqtt_client
 import time
 import queue
 
+import HSyslog
 import HTools
 import HStategrid
 import HHhdlist
@@ -40,11 +41,10 @@ class HMqttClient:
         if rc == 0:
             self.connectStatus = True
             HSyslog.log_info("Connected to MQTT Broker!")
-            print("Connected to MQTT Broker!")
             HHhdlist.device_mqtt_status = True
         else:
             self.connectStatus = False
-            print("Failed to connect, return code %d\n", rc)
+            HSyslog.log_info(f"Failed to connect, return code {rc}")
             HHhdlist.device_mqtt_status = False
 
     def on_message(self, client, userdata, msg):
@@ -52,7 +52,6 @@ class HMqttClient:
 
     def on_disconnect(self, client, userdata, rc):
         HSyslog.log_info("check connection is closed! rc = {}".format(rc))
-        print("check connection is closed! rc = {}".format(rc))
         self.connectStatus = False
         self.clientDev.disconnect()
 
@@ -76,18 +75,18 @@ class HMqttClient:
         if self.connectStatus:
             result = self.clientDev.publish(topic, msg, qos)
             if not result[0]:
-                print(f"Send: \033[93m{msg}\033[0m to topic: \033[93m{topic}\033[0m")
+                print(f"Send: {msg} to topic: {topic}")
                 if topic != '/hqc/sys/network-state':
                     HSyslog.log_info(f"Send_to_Device: {msg} to topic: {topic}")
                 return True
             else:
-                print(f"Failed to send message to topic {topic}")
+                HSyslog.log_info(f"Failed to send message to topic {topic}")
                 return False
 
         return False
 
     def __subscribe(self, msg, topic) -> bool:
-        print(f"Received: \033[93m{msg}\033[0m from topic:\033[93m{topic}\033[0m")
+        print(f"Received: {msg} from topic:{topic}")
         if topic != "/hqc/main/telemetry-notify/info":
             HSyslog.log_info(f"Received_from_Device: {msg} to topic: {topic}")
         app_subscribe(msg, topic)
@@ -105,7 +104,7 @@ def analysis_msg_dict(func_dict: dict, msg_dict: dict, topic: str):
 
 def app_subscribe(msg: str, topic: str):
     if topic not in app_func_dict.keys():
-        print("does not exist this topic")
+        HSyslog.log_info("does not exist this topic")
         return False
     if not app_func_dict[topic]['func']:
         return False
@@ -153,10 +152,10 @@ def keep_mqtt(broker, port):
             if isFirst:
                 isFirst = False
                 try:
-                    print('!!!!! MQTT重连 !!!!!')
+                    HSyslog.log_info('!!!!! MQTT重连 !!!!!')
                     hmclient = thmc.connect_mqtt()  # 客户端对象
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+                    HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
                     isFirst = True
                 if thmc.connectStatus and thmc.client:
                     hmclient.loop_start()
@@ -165,15 +164,15 @@ def keep_mqtt(broker, port):
                 try:
                     hmclient.reconnect()
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-                print('will send netstatus')
+                    HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+                HSyslog.log_info('will send netstatus')
                 hmclient.loop_start()
                 thmc.subscribe()
         else:
             if hmclient._state == 2 or hmclient._state == 0:
                 hmclient.disconnect()
                 thmc.connectStatus = False
-                print("The connection is Closed! state is {}".format(hmclient._state))
+                HSyslog.log_info("The connection is Closed! state is {}".format(hmclient._state))
 
         time.sleep(1)
 
@@ -230,7 +229,6 @@ def do_mqtt_period():
 
 
 def app_device_fault(msg_body_dict: dict):
-    devCode = msg_body_dict.get('devCode', -1)  # int
     faultSum = msg_body_dict.get('faultSum', -1)  # int
     warnSum = msg_body_dict.get('warnSum', -1)  # int
     faultVal = msg_body_dict.get('faultVal', [])  # array
@@ -239,7 +237,7 @@ def app_device_fault(msg_body_dict: dict):
     if HStategrid.get_flaut_status():
         fault_warn_code = {}  # {"device_num":[]}
         if warnSum < 0 or faultSum < 0:
-            print("\033[91m故障告警信息错误\033[0m")
+            HSyslog.log_info("故障告警信息错误")
             return -1
         elif warnSum > 0 or faultSum > 0:
             for info in faultVal:
@@ -247,17 +245,6 @@ def app_device_fault(msg_body_dict: dict):
                     for flaut_type, flaut_data in device_data.items():  # flaut_type:flaut
                         for flaut_id, flaut_list in flaut_data.items():  # flaut_id:1000
                             if info.get("fault_id") in flaut_list:
-                                if (
-                                        flaut_id in HStategrid.flaut_warning_type["device"]["flaut"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["device"]["warn"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["device"]["regular"].keys()
-                                ):
-                                    if 0 not in fault_warn_code:  # 系统
-                                        fault_warn_code[0] = {}
-                                    if flaut_type not in fault_warn_code[0]:
-                                        fault_warn_code[0][flaut_type] = []
-                                    if flaut_id not in fault_warn_code[0][flaut_type]:
-                                        fault_warn_code[0][flaut_type].append(flaut_id)
                                 if (
                                         flaut_id in HStategrid.flaut_warning_type["gun"]["flaut"].keys() or
                                         flaut_id in HStategrid.flaut_warning_type["gun"]["warn"].keys() or
@@ -276,17 +263,6 @@ def app_device_fault(msg_body_dict: dict):
                         for flaut_id, flaut_list in flaut_data.items():  # flaut_id:1000
                             if info.get("fault_id") in flaut_list:
                                 if (
-                                        flaut_id in HStategrid.flaut_warning_type["device"]["flaut"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["device"]["warn"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["device"]["regular"].keys()
-                                ):
-                                    if 0 not in fault_warn_code:  # 系统
-                                        fault_warn_code[0] = {}
-                                    if flaut_type not in fault_warn_code[0]:
-                                        fault_warn_code[0][flaut_type] = []
-                                    if flaut_id not in fault_warn_code[0][flaut_type]:
-                                        fault_warn_code[0][flaut_type].append(flaut_id)
-                                if (
                                         flaut_id in HStategrid.flaut_warning_type["gun"]["flaut"].keys() or
                                         flaut_id in HStategrid.flaut_warning_type["gun"]["warn"].keys() or
                                         flaut_id in HStategrid.flaut_warning_type["gun"]["regular"].keys()
@@ -299,14 +275,12 @@ def app_device_fault(msg_body_dict: dict):
                                         fault_warn_code[info.get("device_num")][flaut_type].append(flaut_id)
         else:
             if warnSum == 0 and faultSum == 0:
-                print("\033[91m故障告警数量为零\033[0m")
+                HSyslog.log_info("故障告警数量为零")
 
         info = {}
         HHhdlist.device_flaut_warn = fault_warn_code
         if fault_warn_code != {}:
             for gun_id in fault_warn_code.keys():
-                warnnum = None
-                faultnum = None
                 if fault_warn_code.get(gun_id).get("flaut", 0) == 0:
                     faultnum = 0
                 else:
@@ -380,8 +354,9 @@ def app_telemetry_telesignaling(msg_body_dict: dict):
                         gun_id = int(gun_id) + 1
                         cabinet[gun_id] = {}
                         for key, value in gun_data.items():
-                            if int(key) in HHhdlist.Power_Pistol.keys():
-                                cabinet[gun_id][int(key)] = value
+                            if key != "extend":
+                                if int(key) in HHhdlist.Power_Pistol.keys():
+                                    cabinet[gun_id][int(key)] = value
                         if gun_id not in HHhdlist.cabinet.keys():
                             HHhdlist.cabinet[gun_id] = {}
                         HHhdlist.cabinet[gun_id].update(cabinet[gun_id])
@@ -392,7 +367,6 @@ def app_telemetry_telesignaling(msg_body_dict: dict):
                         for key, value in gun_data.items():
                             if int(key) in HHhdlist.Gun_Pistol.keys():
                                 gun[gun_id][int(key)] = value
-
                         if gun_id not in HHhdlist.gun.keys():
                             HHhdlist.gun[gun_id] = {}
                         HHhdlist.gun[gun_id].update(gun[gun_id])
@@ -448,17 +422,7 @@ def app_telemetry_telesignaling(msg_body_dict: dict):
                         HHhdlist.parkLock[gun_id].update(parkLock[gun_id])
 
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-
-    # print(f"chargeSys: {HHhdlist.chargeSys}")
-    # print(f"cabinet: {HHhdlist.cabinet}")
-    # print(f"gun: {HHhdlist.gun}")
-    # print(f"pdu: {HHhdlist.pdu}")
-    # print(f"module: {HHhdlist.module}")
-    # print(f"bms: {HHhdlist.bms}")
-    # print(f"meter: {HHhdlist.meter}")
-    # print(f"parkLock: {HHhdlist.parkLock}")
-    # print(f"HHhdlist.device_charfer_p: {HHhdlist.device_charfer_p}")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
 
     # HSyslog.log_info(f"chargeSys: {HHhdlist.chargeSys}")
     # HSyslog.log_info(f"cabinet: {HHhdlist.cabinet}")
@@ -582,7 +546,7 @@ def app_charge_request(msg_body_dict: dict):
         HHhdlist.device_charfer_p[gunNo].update({"cloud_session_id": tradeNo})
         HHhdlist.device_charfer_p[gunNo].update({"delay_time": 0})
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
 
 
 '''充电记录应答消息'''
@@ -629,6 +593,7 @@ def app_charging_control_response(msg_body_dict: dict):
         }
         HTools.Htool_send_startChaResEvt(data)
     if package_num == HHhdlist.device_charfer_p.get(gunNo).get("stop_package_num"):
+        pass
         workStatus = HStategrid.workstatus(HHhdlist.gun.get(gunNo).get(1), HHhdlist.gun.get(gunNo).get(6))
         dc_nonWork = {
             "gunNo": gunNo,
@@ -725,7 +690,7 @@ def app_vin_authentication(msg_body_dict: dict):
                     }
                     app_authentication_response(data)
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
 
 
 '''充电记录消息'''
@@ -784,8 +749,9 @@ def app_charging_record(msg_body_dict: dict):
                 "user_id": msg_body_dict.get('user_id', ''),  # string
                 "vin": msg_body_dict.get('vin', ''),  # string
                 "record_type": msg_body_dict.get('record_type', -1),  # int
-                "pair_session_id": msg_body_dict.get('pair_session_id', ''),  # string
+                "main_session_id": msg_body_dict.get('main_session_id', ''),  # string
                 "connect_time": msg_body_dict.get('connect_time', -1),  # int
+                "multi_mode": msg_body_dict.get('multi_mode', -1),  # int
                 "interval_count": msg_body_dict.get('interval_count', -1),  # int
                 "interval": msg_body_dict.get('interval', []),  # array
             }
@@ -895,8 +861,9 @@ def app_charging_record(msg_body_dict: dict):
                         "user_id": msg_body_dict.get('user_id', ''),  # string
                         "vin": msg_body_dict.get('vin', ''),  # string
                         "record_type": msg_body_dict.get('record_type', -1),  # int
-                        "pair_session_id": msg_body_dict.get('pair_session_id', ''),  # string
+                        "main_session_id": msg_body_dict.get('main_session_id', ''),  # string
                         "connect_time": msg_body_dict.get('connect_time', -1),  # int
+                        "multi_mode": msg_body_dict.get('multi_mode', -1),  # int
                         "interval_count": msg_body_dict.get('interval_count', -1),  # int
                         "interval": msg_body_dict.get('interval', []),  # array
                     }
@@ -964,8 +931,9 @@ def app_charging_record(msg_body_dict: dict):
                     HTools.Htool_orderUpdateEvt(info)
                     HStategrid.save_DeviceOrder(info)
                 except Exception as e:
-                    print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+                    print(f"{e} .{inspect.currentframe().f_lineno}")
                     return False
+
     else:
         try:
             timeDivType = 10
@@ -1021,7 +989,7 @@ def app_charging_record(msg_body_dict: dict):
             HTools.Htool_orderUpdateEvt(info)
             HStategrid.save_DeviceOrder(info)
         except Exception as e:
-            print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+            HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
             return False
 
 
@@ -1094,7 +1062,7 @@ def app_rate_request(msg_body_dict: dict):
     try:
         info = {}
         if count == -1:
-            print(f"\033[91m费率请求错误\033[0m")
+            HSyslog.log_info(f"费率请求错误")
         if 0 < count < 8:
             info = {
                 "gunNo": 1,
@@ -1109,7 +1077,7 @@ def app_rate_request(msg_body_dict: dict):
             }
         HTools.Htool_send_askFeeModelEvt(info)
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
 
 
 '''充电启动策略请求消息'''
@@ -1172,7 +1140,7 @@ def app_charge_session(msg_body_dict: dict):
 
         app_charge_session_response(0)
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
 
 
 '''读取版本号消息'''
@@ -1429,7 +1397,7 @@ def app_parameter_fetch_response(msg_body_dict: dict):
 
         return 0
     except Exception as e:
-        print(f"\033[91mapp_parameter_fetch_response's error: {e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"app_parameter_fetch_response's error: {e} .{inspect.currentframe().f_lineno}")
 
 
 '''时间同步消息'''
@@ -1658,10 +1626,9 @@ def app_charge_control(msg_body_dict: dict):
                 HHhdlist.device_charfer_p[gunNo].update({"stop_type": 0})
                 HHhdlist.device_charfer_p[gunNo].update({"stop_condition": 0})
             except Exception as e:
-                print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+                HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
                 HSyslog.log_info(HHhdlist.device_charfer_p.get("preTradeNo") + e)
     else:
-        print("控制消息有误")
         HSyslog.log_info("控制消息有误")
     return True
 
@@ -1675,7 +1642,7 @@ def app_authentication_response(msg_body_dict: dict):
         app_publish(topic, msg_body_dict)
         return True
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
         return False
 
 
@@ -1732,7 +1699,7 @@ def app_account_recharge(gun_id: int,
 
 def app_charge_rate_request_response(result: int):  # 0:成功， 1：失败
     if result not in range(0, 2):
-        print("app_charge_rate_request_response para error")
+        HSyslog.log_info("app_charge_rate_request_response para error")
         return False
     msg_body = {
         'result': result
@@ -1747,7 +1714,7 @@ def app_charge_rate_request_response(result: int):  # 0:成功， 1：失败
 
 def app_charge_start_strategy_request_response(result: int):  # 0:成功， 1：失败
     if result not in range(0, 2):
-        print("app_charge_start_strategy_request_response para error")
+        HSyslog.log_info("app_charge_start_strategy_request_response para error")
         return False
     msg_body = {
         'result': result
@@ -1762,7 +1729,7 @@ def app_charge_start_strategy_request_response(result: int):  # 0:成功， 1：
 
 def app_power_allocation_strategy_request_response(result: int):  # 0:失败， 1：成功
     if result not in range(0, 2):
-        print("app_power_allocation_strategy_request_response para error")
+        HSyslog.log_info("app_power_allocation_strategy_request_response para error")
         return False
     msg_body = {
         'result': result
@@ -1777,7 +1744,7 @@ def app_power_allocation_strategy_request_response(result: int):  # 0:失败， 
 
 def app_offline_list_version_response(result: int):  # 0:成功， 1：失败
     if result not in range(0, 2):
-        print("app_offline_list_version_response para error")
+        HSyslog.log_info("app_offline_list_version_response para error")
         return False
     msg_body = {
         'result': result
@@ -1792,7 +1759,7 @@ def app_offline_list_version_response(result: int):  # 0:成功， 1：失败
 
 def app_charge_session_response(result: int):  # 0:成功， 1：失败
     if result not in range(0, 2):
-        print("app_charge_session_response para error")
+        HSyslog.log_info("app_charge_session_response para error")
         return False
     msg_body = {
         'result': result
@@ -1833,8 +1800,8 @@ def app_charge_rate_sync_message(msg_body_dict: dict, type=1, count=1):
         chargeFee = msg_body_dict.get("chargeFee", [])
         serviceFee = msg_body_dict.get("serviceFee", [])
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91mapp_charge_rate_sync_message: {msg_body_dict}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"app_charge_rate_sync_message: {msg_body_dict}")
         return False
 
     try:
@@ -1924,8 +1891,8 @@ def app_charge_rate_sync_message(msg_body_dict: dict, type=1, count=1):
         app_publish(topic, msg)
         return True
     except Exception as e:
-        print(f"\033[91m{e} .{inspect.currentframe().f_lineno}\033[0m")
-        print(f"\033[91mapp_charge_rate_sync_message: {msg}\033[0m")
+        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"app_charge_rate_sync_message: {msg}")
         return False
 
 
