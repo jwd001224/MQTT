@@ -5,7 +5,7 @@ import qrcode
 
 # 读取 Excel 文件
 file_path = '出厂编号.xlsx'  # 替换为你的文件路径
-city_path = "潜江"
+city_path = "大冶"
 df = pd.read_excel(file_path, sheet_name=city_path, usecols=[0, 2], names=['FirstColumn', 'FourthColumn'])  # 使用工作表名称
 
 # 创建 QRcode 目录

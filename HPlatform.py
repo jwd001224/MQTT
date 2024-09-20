@@ -80,14 +80,10 @@ def linkkit_init():
         result = HStategrid.get_VerInfoEvt(4)
         if result[0] is not None:
             set_version(result[0])
-        HStategrid.save_DeviceInfo("SDKVersion", 1, "A0.4", 0)
+        HStategrid.save_DeviceInfo("SDKVersion", 1, "A0.4.240913", 0)
         HStategrid.save_DeviceInfo("UIVersion", 1, HHhdlist.read_json_config("ui_version"), 0)
-        print(HStategrid.get_DeviceInfo("productKey"))
-        print(HStategrid.get_DeviceInfo("deviceName"))
-        print(HStategrid.get_DeviceInfo("deviceSecret"))
-        print(HStategrid.get_DeviceInfo("deviceCode"))
-        HHhdlist.save_json_config({"SDKVersion": "A0.3"})
-        HHhdlist.save_json_config({"Platform__type": "GW_SDK"})
+        HHhdlist.save_json_config({"SDKVersion": "A0.4.240913"})
+        HHhdlist.save_json_config({"Platform_type": "GW_SDK"})
         time.sleep(3)
 
         iot_link_connect(0, 1)
@@ -133,8 +129,7 @@ def __plamform_send():
                     else:
                         data = send_event_queue.get()
                         if data[0] <= 14:
-                            res = iot_send_event(data[0], data[1])
-                            HStategrid.ack_num.update({res: [data[0], data[1]]})
+                            iot_send_event(data[0], data[1])
                         elif data[0] >= 15:
                             iot_send_property(data[0], data[1])
                         else:
@@ -168,8 +163,7 @@ def plamform_property_thread(info_dict: dict):
     dc_nonWork_property = PeriodicFunctionCaller(info_dict.get("nonElecFreq", 180), _send_property_dc_nonWork)
     meter_property = PeriodicFunctionCaller(info_dict.get("dcMeterFreq", 300) * 60, _send_property_meter)
     BMS_property = PeriodicFunctionCaller(15, _send_property_BMS)
-    dc_input_meter_property = PeriodicFunctionCaller(info_dict.get("acMeterFreq", 300) * 60,
-                                                     _send_property_dc_input_meter)
+    dc_input_meter_property = PeriodicFunctionCaller(info_dict.get("acMeterFreq", 300) * 60, _send_property_dc_input_meter)
     if not dcPile_property.cleck_thread_status():
         dcPile_property.start_periodic_calling()
         time.sleep(1)
@@ -198,7 +192,7 @@ def _send_property_dcPile():
             HStategrid.get_net()
             eleModelId = HStategrid.get_DeviceInfo("eleModelId")
             serModelId = HStategrid.get_DeviceInfo("serModelId")
-            if eleModelId is None or serModelId is None:
+            if eleModelId is None or serModelId is None or eleModelId == "" or serModelId == "":
                 eleModelId = ""
                 serModelId = ""
             dcPile = {
@@ -1140,14 +1134,14 @@ def service_trigEvevtReply(data_json):  # 事件回调
         msgid = data_dict.get("msgid")
         code = data_dict.get("code")
         message = data_dict.get("message")
-        if HStategrid.ack_num == {}:
-            return -1
-        else:
-            if msgid in HStategrid.ack_num.keys() and code == 200 and message == "success":
-                HStategrid.ack_num.pop(msgid)
-            else:
-                send_event_queue.put(HStategrid.ack_num.get(msgid))
-                HStategrid.ack_num.pop(msgid)
+
+        # if HStategrid.ack_num == {}:
+        #     return -1
+        # else:
+        #     if msgid in HStategrid.ack_num.keys() and code == 200 and message == "success":
+        #         HStategrid.ack_num[msgid].update({"ack": True})
+        #     else:
+        #         HStategrid.ack_num[msgid].update({"ack": False})
     except Exception as e:
         HSyslog.log_info(f"Service_trigEvevtReply .{data_json} .{e} .{inspect.currentframe().f_lineno}")
         return -1
@@ -1238,9 +1232,9 @@ def send_firmwareEvt():
                 HHhdlist.device_type = 2
         else:
             stakeModel = "HHD_DC_2"
-        if eleModelId is None:
+        if eleModelId is None or eleModelId == "":
             eleModelId = ""
-        if serModelId is None:
+        if serModelId is None or serModelId == "":
             serModelId = ""
         outMeter = []
         if HStategrid.get_DeviceInfo("meter1") is not None and HStategrid.get_DeviceInfo("meter1") != "":
@@ -1286,10 +1280,10 @@ def send_firmwareEvt():
         if HHhdlist.device_charfer_p == {}:
             for i in range(0, HStategrid.gun_num):
                 HHhdlist.device_charfer_p[i + 1] = {}
-        plamform_event(0, info_dict)
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
         qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
         qrcode_ack = {}
+        HSyslog.log_info(HStategrid.gun_num)
         for i in range(0, HStategrid.gun_num):
             info_qrCode = {
                 "gun_id": i,
@@ -1298,6 +1292,7 @@ def send_firmwareEvt():
             }
             HTools.Htool_app_QR_code_update(info_qrCode)
             qrcode_ack.update({i: True})
+        plamform_event(0, info_dict)
         HHhdlist.save_json_config({"qrcode": qrcode_ack})
         for i in range(0, HStategrid.gun_num):
             HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
@@ -1422,7 +1417,7 @@ def send_verInfoEvt(device_type):
             ui_version = HStategrid.get_DeviceInfo("UIVersion")
             info_dict = {
                 "devRegMethod": 10,
-                "pileSoftwareVer": f"Charger: {data[0]}, SDK: {sdk_version}, UI: {ui_version}",
+                "pileSoftwareVer": f"Charger:{data[0]},SDK:{sdk_version},UI:{ui_version}",
                 "pileHardwareVer": data[1],
                 "sdkVer": "SDK_v1.1.7"
             }
@@ -1711,3 +1706,5 @@ def set_orderCharge(info_dict: dict):
                     return False
     else:
         return False
+
+

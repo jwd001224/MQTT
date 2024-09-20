@@ -186,11 +186,11 @@ def do_link_mqtt():
 def __mqtt_send_data():
     while True:
         if not DtoP_queue:
-            time.sleep(0.5)
+            time.sleep(0.1)
         else:
             try:
                 if DtoP_queue.empty():
-                    time.sleep(0.5)
+                    time.sleep(0.1)
                 else:
                     msg = dict(DtoP_queue.get())
                     if "topic" not in msg.keys():
@@ -810,6 +810,8 @@ def app_charging_record(msg_body_dict: dict):
             }
             HTools.Htool_orderUpdateEvt(info)
             HStategrid.save_DeviceOrder(info)
+            HHhdlist.device_charfer_p.update({gunNo: {}})
+            HHhdlist.bms_sum.update({gunNo: 1})
         else:
             if msg_body_dict.get('device_session_id') == device_session_id:
                 try:
@@ -930,10 +932,11 @@ def app_charging_record(msg_body_dict: dict):
                     }
                     HTools.Htool_orderUpdateEvt(info)
                     HStategrid.save_DeviceOrder(info)
+                    HHhdlist.device_charfer_p.update({gunNo: {}})
+                    HHhdlist.bms_sum.update({gunNo: 1})
                 except Exception as e:
                     print(f"{e} .{inspect.currentframe().f_lineno}")
                     return False
-
     else:
         try:
             timeDivType = 10
@@ -1875,13 +1878,13 @@ def app_charge_rate_sync_message(msg_body_dict: dict, type=1, count=1):
                 # print("msg_items[contents]: ", msg_items["contents"])
 
             msg["items"].append(msg_items)
-            msg.get("items")[count - 1].get("contents").insert(0, {
+            msg["items"][count - 1]["contents"].insert(0, {
                 "num": 1,
-                "type": 1,
+                "type": segFlag[timeNum - 1] - 9,
                 "start_time": 0,
                 "stop_time": int(timeSeg[0][0:2]) * 3600 + int(timeSeg[0][2:4]) * 60 - 1,
-                "electric_rate": 0,
-                "service_rate": 0
+                "electric_rate": chargeFee[segFlag[timeNum-1] - 9 - 1] * 100,
+                "service_rate": serviceFee[segFlag[timeNum-1] - 9 - 1] * 100
             })
 
         HStategrid.save_DeviceInfo("feeid", 1, eleModelId + serModelId, 0)

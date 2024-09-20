@@ -54,8 +54,6 @@ device_hard = {
     "CCU": 3,
 }
 
-ack_num = {}
-
 flaut_warning_type = {
     "gun": {
         "regular": {
@@ -626,27 +624,33 @@ def get_before_last_dot(s):
 def get_stop_type(chargeMode):
     if chargeMode == 10:
         return 0x00
-    if chargeMode == 11:
+    elif chargeMode == 11:
         return 0x02
-    if chargeMode == 12:
+    elif chargeMode == 12:
         return 0x01
-    if chargeMode == 13:
+    elif chargeMode == 13:
         return 0x04
-    if chargeMode == 14:
+    elif chargeMode == 14:
         return 0x03
+    elif chargeMode == 15:
+        return 0xFF
+    else:
+        return 0x3f
 
 
 def get_stop_condition(chargeMode, limitData):
     if chargeMode == 10:
         return 0
-    if chargeMode == 11:
+    elif chargeMode == 11:
         return limitData * 1000
-    if chargeMode == 12:
+    elif chargeMode == 12:
         return limitData * 1000
-    if chargeMode == 13:
+    elif chargeMode == 13:
         return limitData
-    if chargeMode == 14:
+    elif chargeMode == 14:
         return limitData * 60
+    else:
+        return limitData // 10
 
 
 def get_start_source(startType):
@@ -807,11 +811,9 @@ def save_DeviceInfo(data_id, data_type, data_str, data_int):
     conn = sqlite3.connect(data_path)
     cur = conn.cursor()
     if get_DeviceInfo(data_id) is None:
-        cur.execute('''INSERT INTO DeviceInfo (data_id, data_type, data_str, data_int) VALUES (?, ?, ?, ?)''',
-                    (data_id, data_type, data_str, data_int))
+        cur.execute('''INSERT INTO DeviceInfo (data_id, data_type, data_str, data_int) VALUES (?, ?, ?, ?)''', (data_id, data_type, data_str, data_int))
     else:
-        cur.execute('''UPDATE DeviceInfo SET data_type = ?, data_str = ?, data_int = ? WHERE data_id = ?''',
-                    (data_type, data_str, data_int, data_id))
+        cur.execute('''UPDATE DeviceInfo SET data_type = ?, data_str = ?, data_int = ? WHERE data_id = ?''', (data_type, data_str, data_int, data_id))
     conn.commit()
     conn.close()
 
@@ -1043,11 +1045,9 @@ def save_dcBmsRunIty(dict_info: dict):
     maxTemp = dict_info.get("maxTemp")
     batCurVol = dict_info.get("batCurVol")
     cur.execute(
-        '''INSERT INTO dcBmsRunIty (gunNo, preTradeNo, tradeNo, socVal, BMSVer, BMSMaxVol, batType, batRatedCap, batRatedTotalVol, 
-         singlBatMaxAllowVol, maxAllowCur, battotalEnergy, maxVol, maxTemp, batCurVol, get_time) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (gunNo, preTradeNo, tradeNo, socVal, BMSVer, BMSMaxVol, batType, batRatedCap, batRatedTotalVol,
-         singlBatMaxAllowVol, maxAllowCur, battotalEnergy, maxVol, maxTemp, batCurVol, get_time))
+        '''
+        INSERT INTO dcBmsRunIty (gunNo, preTradeNo, tradeNo, socVal, BMSVer, BMSMaxVol, batType, batRatedCap, batRatedTotalVol, singlBatMaxAllowVol, maxAllowCur, battotalEnergy, maxVol, maxTemp, batCurVol, get_time) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (gunNo, preTradeNo, tradeNo, socVal, BMSVer, BMSMaxVol, batType, batRatedCap, batRatedTotalVol, singlBatMaxAllowVol, maxAllowCur, battotalEnergy, maxVol, maxTemp, batCurVol, get_time))
     conn.commit()
     conn.close()
 

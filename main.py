@@ -37,13 +37,10 @@ def main():
                     # HStategrid.save_DeviceInfo("deviceName", 1, deviceName, 0)
                     break
             else:
-                if HStategrid.get_DeviceInfo("productKey") is None or HStategrid.get_DeviceInfo("productKey") == "":
-                    HStategrid.save_DeviceInfo("productKey", 1,
-                                               HHhdlist.read_json_config("productKey", "/root/DeviceCode.json"), 0)
-                    HStategrid.save_DeviceInfo("deviceName", 1,
-                                               HHhdlist.read_json_config("deviceName", "/root/DeviceCode.json"), 0)
-                    HStategrid.save_DeviceInfo("deviceSecret", 1,
-                                               HHhdlist.read_json_config("deviceSecret", "/root/DeviceCode.json"), 0)
+                if HStategrid.get_DeviceInfo("productKey") is None or HStategrid.get_DeviceInfo("productKey") == "0" or HStategrid.get_DeviceInfo("productKey") == "":
+                    HStategrid.save_DeviceInfo("productKey", 1, HHhdlist.read_json_config("productKey", "/root/DeviceCode.json"), 0)
+                    HStategrid.save_DeviceInfo("deviceName", 1, HHhdlist.read_json_config("deviceName", "/root/DeviceCode.json"), 0)
+                    HStategrid.save_DeviceInfo("deviceSecret", 1, HHhdlist.read_json_config("deviceSecret", "/root/DeviceCode.json"), 0)
                 else:
                     HHhdlist.save_json_config({"productKey": HStategrid.get_DeviceInfo("productKey")})
                     HHhdlist.save_json_config({"deviceName": HStategrid.get_DeviceInfo("deviceName")})
