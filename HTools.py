@@ -90,3 +90,7 @@ def Htool_app_read_version_number(get_data):
 
 def Htool_app_charge_rate_request_response(result):
     HDevice.app_charge_rate_request_response(result)
+
+
+def Htool_app_net_status(netType, netSigVal, netId):
+    HDevice.app_net_status(netType, netSigVal, netId)

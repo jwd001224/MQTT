@@ -9,6 +9,7 @@ import threading
 import time
 from datetime import datetime
 import sqlite3
+from enum import Enum
 
 import HSyslog
 
@@ -19,7 +20,8 @@ property_status = 0
 flaut_status = 0
 net_status = 0
 gun_num = 0
-
+gunElecFreq_time = 0
+send_gunElecFreq = {}
 DEBUG_MODE = True
 
 platform_data = {
@@ -28,10 +30,17 @@ platform_data = {
     "netId": 14,
 }
 
+
+class SIGN_TYPE(Enum):
+    deviceCode = 0
+    deviceRegCode = 1
+
+
 current_timestamp = time.time()  # 系统精确时间
 log_queue = queue.Queue()
 
 deviceCode = None  # 出厂编码
+Sign_type = SIGN_TYPE.deviceRegCode.value
 Vendor_Code = 1031  # 厂商代码
 Manufacture_Date = None  # 出厂日期
 device_type = {  # 设备类型
@@ -504,7 +513,7 @@ def get_net():
             platform_data["sigVal"] = 0
             net_status = 0
     except Exception as e:
-        HSyslog.log_info(f"get_net: {return_code} . {ping_output} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"get_net: {return_code} . {ping_output} .{e}")
 
     try:
         # 获取网络接口信息
@@ -520,7 +529,7 @@ def get_net():
         else:
             platform_data["netType"] = 10
     except Exception as e:
-        HSyslog.log_info(f"get_net: {return_code} . {ping_output} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"get_net: {return_code} . {ping_output} .{e}")
 
 
 def get_ping():
@@ -642,9 +651,9 @@ def get_stop_condition(chargeMode, limitData):
     if chargeMode == 10:
         return 0
     elif chargeMode == 11:
-        return limitData * 1000
+        return limitData * 10
     elif chargeMode == 12:
-        return limitData * 1000
+        return limitData * 100
     elif chargeMode == 13:
         return limitData
     elif chargeMode == 14:
@@ -797,6 +806,15 @@ def datadb_init():
             flatServCost INTEGER,
             valleyServCost INTEGER,
             device_session_id TEXT
+        )
+    ''')
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS Fault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            gunNo INTEGER,
+            FaultValue TEXT,
+            WarnValue TEXT,
+            Time INTEGER
         )
     ''')
 
@@ -1074,6 +1092,7 @@ def delete_db():
         delete_dcOutMeterIty()
         delete_dcBmsRunIty()
         delete_DeviceOrder()
+        delete_Fault()
     else:
         time.sleep(86400)
 
@@ -1113,7 +1132,45 @@ def delete_DeviceOrder():
     for info in result:
         if int(time.time()) - info[7] >= 86400 * 90:
             cur.execute("DELETE FROM DeviceOrder WHERE chargeEndTime=?", (info[7],))
-            print(info)
+    conn.commit()
+    conn.close()
+    return result
+
+
+def save_Fault(fault_dict: dict):
+    conn = sqlite3.connect(data_path)
+    cur = conn.cursor()
+    gunNo = fault_dict.get("gunNo")
+    faultValue = str(fault_dict.get("faultValue"))
+    warnValue = str(fault_dict.get("warnValue"))
+    get_time = fault_dict.get("get_time")
+    cur.execute('''INSERT INTO Fault (gunNo, FaultValue, WarnValue, Time) VALUES (?, ?, ?, ?)''', (gunNo, faultValue, warnValue, get_time))
+    conn.commit()
+    conn.close()
+
+
+def get_Fault(start_time, stop_time):
+    conn = sqlite3.connect(data_path)
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM Fault')
+    result = cur.fetchall()
+    fault_list = []
+    for fault in result:
+        if stop_time > fault[3] > start_time:
+            fault_list.append(fault)
+    conn.commit()
+    conn.close()
+    return fault_list
+
+
+def delete_Fault():
+    conn = sqlite3.connect(data_path)
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM Fault')
+    result = cur.fetchall()
+    for info in result:
+        if int(time.time()) - info[4] >= 86400 * 90:
+            cur.execute("DELETE FROM Fault WHERE Time=?", (info[4],))
     conn.commit()
     conn.close()
     return result

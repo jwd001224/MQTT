@@ -66,7 +66,7 @@ class HMqttClient:
         for dic in app_func_dict.keys():
             if app_func_dict.get(dic).get("isSubscribe"):
                 self.clientDev.subscribe(topic=dic, qos=app_func_dict.get(dic).get("qos"))
-        if HStategrid.link_init_status == 1:
+        if HStategrid.get_link_init_status() == 1:
             app_net_status(HHhdlist.net_type.net_4G.value, 3, HHhdlist.net_id.id_4G.value)
         else:
             app_net_status(HHhdlist.net_type.no_net.value, 0, HHhdlist.net_id.id_4G.value)
@@ -131,6 +131,8 @@ def app_publish(topic: str, msg_body: dict):
                 }
     '''修改包头'''
     msg_dict = modify_msg_head(msg_dict)
+    if topic == HHhdlist.topic_app_charge_control:
+        msg_dict["body"].update({"package_num": msg_dict.get("package_num")})
     msg = json.dumps(msg_dict)
     qos = app_func_dict[topic]["qos"]
     msg = {"topic": topic, "msg": msg, "qos": qos}
@@ -155,7 +157,7 @@ def keep_mqtt(broker, port):
                     HSyslog.log_info('!!!!! MQTT重连 !!!!!')
                     hmclient = thmc.connect_mqtt()  # 客户端对象
                 except Exception as e:
-                    HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"{e}")
                     isFirst = True
                 if thmc.connectStatus and thmc.client:
                     hmclient.loop_start()
@@ -164,7 +166,7 @@ def keep_mqtt(broker, port):
                 try:
                     hmclient.reconnect()
                 except Exception as e:
-                    HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"{e}")
                 HSyslog.log_info('will send netstatus')
                 hmclient.loop_start()
                 thmc.subscribe()
@@ -181,6 +183,12 @@ def do_link_mqtt():
     mqttKeepThread = threading.Thread(target=keep_mqtt, args=["127.0.0.1", 1883])
     mqttKeepThread.start()
     HSyslog.log_info("do_link_mqtt")
+    try:
+        if HHhdlist.device_fault == {}:
+            for i in range(0, HStategrid.gun_num):
+                HHhdlist.device_fault.update({i + 1: {}})
+    except Exception:
+        pass
 
 
 def __mqtt_send_data():
@@ -210,9 +218,9 @@ def __mqtt_period_event():
     period_time = time.time()
     while True:
         if int(time.time()) - int(period_time) > 5:
-            if HStategrid.link_init_status == 1:
+            if HStategrid.get_link_init_status() == 1:
                 app_net_status(HHhdlist.net_type.wired_net.value, 3, HHhdlist.net_id.id_4G.value)
-            if HStategrid.link_init_status == 0:
+            if HStategrid.get_link_init_status() == 0:
                 app_net_status(HHhdlist.net_type.no_net.value, 0, HHhdlist.net_id.id_4G.value)
             period_time = time.time()
         time.sleep(1)
@@ -234,82 +242,89 @@ def app_device_fault(msg_body_dict: dict):
     faultVal = msg_body_dict.get('faultVal', [])  # array
     warnVal = msg_body_dict.get('warnVal', [])  # array
 
-    if HStategrid.get_flaut_status():
-        fault_warn_code = {}  # {"device_num":[]}
-        if warnSum < 0 or faultSum < 0:
-            HSyslog.log_info("故障告警信息错误")
-            return -1
-        elif warnSum > 0 or faultSum > 0:
-            for info in faultVal:
-                for device_type, device_data in HStategrid.flaut_warning_type.items():  # device_type:device
-                    for flaut_type, flaut_data in device_data.items():  # flaut_type:flaut
-                        for flaut_id, flaut_list in flaut_data.items():  # flaut_id:1000
-                            if info.get("fault_id") in flaut_list:
-                                if (
-                                        flaut_id in HStategrid.flaut_warning_type["gun"]["flaut"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["gun"]["warn"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["gun"]["regular"].keys()
-                                ):
-                                    if info.get("device_num") not in fault_warn_code:  # 枪
-                                        fault_warn_code[info.get("device_num")] = {}
-                                    if flaut_type not in fault_warn_code[info.get("device_num")]:
-                                        fault_warn_code[info.get("device_num")][flaut_type] = []
-                                    if flaut_id not in fault_warn_code[info.get("device_num")][flaut_type]:
-                                        fault_warn_code[info.get("device_num")][flaut_type].append(flaut_id)
+    fault_warn_code = {}  # {"device_num":[]}
+    if warnSum < 0 or faultSum < 0:
+        HSyslog.log_info("故障告警信息错误")
+        return -1
+    elif warnSum > 0 or faultSum > 0:
+        for info in faultVal:
+            for device_type, device_data in HStategrid.flaut_warning_type.items():  # device_type:device
+                for flaut_type, flaut_data in device_data.items():  # flaut_type:flaut
+                    for flaut_id, flaut_list in flaut_data.items():  # flaut_id:1000
+                        if info.get("fault_id") in flaut_list:
+                            if (
+                                    flaut_id in HStategrid.flaut_warning_type["gun"]["flaut"].keys() or
+                                    flaut_id in HStategrid.flaut_warning_type["gun"]["warn"].keys() or
+                                    flaut_id in HStategrid.flaut_warning_type["gun"]["regular"].keys()
+                            ):
+                                if info.get("device_num") not in fault_warn_code:  # 枪
+                                    fault_warn_code[info.get("device_num")] = {}
+                                if flaut_type not in fault_warn_code[info.get("device_num")]:
+                                    fault_warn_code[info.get("device_num")][flaut_type] = []
+                                if flaut_id not in fault_warn_code[info.get("device_num")][flaut_type]:
+                                    fault_warn_code[info.get("device_num")][flaut_type].append(flaut_id)
 
-            for info in warnVal:
-                for device_type, device_data in HStategrid.flaut_warning_type.items():  # device_type:device
-                    for flaut_type, flaut_data in device_data.items():  # flaut_type:flaut
-                        for flaut_id, flaut_list in flaut_data.items():  # flaut_id:1000
-                            if info.get("fault_id") in flaut_list:
-                                if (
-                                        flaut_id in HStategrid.flaut_warning_type["gun"]["flaut"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["gun"]["warn"].keys() or
-                                        flaut_id in HStategrid.flaut_warning_type["gun"]["regular"].keys()
-                                ):
-                                    if info.get("device_num") not in fault_warn_code:  # 枪
-                                        fault_warn_code[info.get("device_num")] = {}
-                                    if flaut_type not in fault_warn_code[info.get("device_num")]:
-                                        fault_warn_code[info.get("device_num")][flaut_type] = []
-                                    if flaut_id not in fault_warn_code[info.get("device_num")][flaut_type]:
-                                        fault_warn_code[info.get("device_num")][flaut_type].append(flaut_id)
-        else:
-            if warnSum == 0 and faultSum == 0:
-                HSyslog.log_info("故障告警数量为零")
+        for info in warnVal:
+            for device_type, device_data in HStategrid.flaut_warning_type.items():  # device_type:device
+                for flaut_type, flaut_data in device_data.items():  # flaut_type:flaut
+                    for flaut_id, flaut_list in flaut_data.items():  # flaut_id:1000
+                        if info.get("fault_id") in flaut_list:
+                            if (
+                                    flaut_id in HStategrid.flaut_warning_type["gun"]["flaut"].keys() or
+                                    flaut_id in HStategrid.flaut_warning_type["gun"]["warn"].keys() or
+                                    flaut_id in HStategrid.flaut_warning_type["gun"]["regular"].keys()
+                            ):
+                                if info.get("device_num") not in fault_warn_code:  # 枪
+                                    fault_warn_code[info.get("device_num")] = {}
+                                if flaut_type not in fault_warn_code[info.get("device_num")]:
+                                    fault_warn_code[info.get("device_num")][flaut_type] = []
+                                if flaut_id not in fault_warn_code[info.get("device_num")][flaut_type]:
+                                    fault_warn_code[info.get("device_num")][flaut_type].append(flaut_id)
+    else:
+        if warnSum == 0 and faultSum == 0:
+            HSyslog.log_info("故障告警数量为零")
 
-        info = {}
-        HHhdlist.device_flaut_warn = fault_warn_code
-        if fault_warn_code != {}:
-            for gun_id in fault_warn_code.keys():
-                if fault_warn_code.get(gun_id).get("flaut", 0) == 0:
-                    faultnum = 0
-                else:
-                    faultnum = len(fault_warn_code.get(gun_id).get("flaut"))
-                if fault_warn_code.get(gun_id).get("warn", 0) == 0:
-                    warnnum = 0
-                else:
-                    warnnum = len(fault_warn_code.get(gun_id).get("warn"))
-                info = {
-                    "gunNo": gun_id,
-                    "faultSum": faultnum,
-                    "warnSum": warnnum,
-                    "faultValue": fault_warn_code.get(gun_id).get("flaut", []),
-                    "warnValue": fault_warn_code.get(gun_id).get("warn", []),
-                }
+    info = {}
+    HHhdlist.device_flaut_warn = fault_warn_code
+
+    if fault_warn_code != {}:
+        for gun_id in fault_warn_code.keys():
+            if fault_warn_code.get(gun_id).get("flaut", 0) == 0:
+                faultnum = 0
+            else:
+                faultnum = len(fault_warn_code.get(gun_id).get("flaut"))
+            if fault_warn_code.get(gun_id).get("warn", 0) == 0:
+                warnnum = 0
+            else:
+                warnnum = len(fault_warn_code.get(gun_id).get("warn"))
+            info = {
+                "gunNo": gun_id,
+                "faultSum": faultnum,
+                "warnSum": warnnum,
+                "faultValue": fault_warn_code.get(gun_id).get("flaut", []),
+                "warnValue": fault_warn_code.get(gun_id).get("warn", []),
+                "get_time": int(time.time())
+            }
+            if HStategrid.get_flaut_status():
                 HTools.Htool_send_totalFaultEvt(info)
-
-            return 0
-        else:
-            for i in range(0, HStategrid.get_DeviceInfo("00110")):
-                info = {
-                    "gunNo": i + 1,
-                    "faultSum": 0,
-                    "warnSum": 0,
-                    "faultValue": [],
-                    "warnValue": [],
-                }
+            HHhdlist.device_fault.update({gun_id: info})
+            HStategrid.save_Fault(info)
+        return 0
+    else:
+        for i in range(0, HStategrid.get_DeviceInfo("00110")):
+            info = {
+                "gunNo": i + 1,
+                "faultSum": 0,
+                "warnSum": 0,
+                "faultValue": [],
+                "warnValue": [],
+                "get_time": int(time.time())
+            }
+            if HStategrid.get_flaut_status():
                 HTools.Htool_send_totalFaultEvt(info)
-            return 0
+            HHhdlist.device_fault.update({i + 1: info})
+            HStategrid.save_Fault(info)
+        return 0
 
 
 '''设备故障查询消息'''
@@ -422,7 +437,7 @@ def app_telemetry_telesignaling(msg_body_dict: dict):
                         HHhdlist.parkLock[gun_id].update(parkLock[gun_id])
 
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
 
     # HSyslog.log_info(f"chargeSys: {HHhdlist.chargeSys}")
     # HSyslog.log_info(f"cabinet: {HHhdlist.cabinet}")
@@ -546,7 +561,7 @@ def app_charge_request(msg_body_dict: dict):
         HHhdlist.device_charfer_p[gunNo].update({"cloud_session_id": tradeNo})
         HHhdlist.device_charfer_p[gunNo].update({"delay_time": 0})
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
 
 
 '''充电记录应答消息'''
@@ -593,7 +608,6 @@ def app_charging_control_response(msg_body_dict: dict):
         }
         HTools.Htool_send_startChaResEvt(data)
     if package_num == HHhdlist.device_charfer_p.get(gunNo).get("stop_package_num"):
-        pass
         workStatus = HStategrid.workstatus(HHhdlist.gun.get(gunNo).get(1), HHhdlist.gun.get(gunNo).get(6))
         dc_nonWork = {
             "gunNo": gunNo,
@@ -690,7 +704,7 @@ def app_vin_authentication(msg_body_dict: dict):
                     }
                     app_authentication_response(data)
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
 
 
 '''充电记录消息'''
@@ -698,8 +712,8 @@ def app_vin_authentication(msg_body_dict: dict):
 
 def app_charging_record(msg_body_dict: dict):
     gunNo = msg_body_dict.get('gun_id') + 1
-    device_session_id = HHhdlist.device_charfer_p.get(gunNo).get("device_session_id", "")
     if HHhdlist.device_charfer_p[gunNo] != {}:
+        device_session_id = HHhdlist.device_charfer_p.get(gunNo).get("device_session_id", "")
         if device_session_id == "":
             device_order = {
                 "gun_id": gunNo,  # int
@@ -934,8 +948,24 @@ def app_charging_record(msg_body_dict: dict):
                     HStategrid.save_DeviceOrder(info)
                     HHhdlist.device_charfer_p.update({gunNo: {}})
                     HHhdlist.bms_sum.update({gunNo: 1})
+                    workStatus = HStategrid.workstatus(HHhdlist.gun.get(gunNo).get(1), HHhdlist.gun.get(gunNo).get(6))
+                    dc_nonWork = {
+                        "gunNo": gunNo,
+                        "workStatus": workStatus,
+                        "gunStatus": HHhdlist.gun.get(gunNo).get(6, 0) + 10,
+                        "eLockStatus": HHhdlist.gun.get(gunNo).get(2, 0) + 10,
+                        "DCK1Status": HHhdlist.gun.get(gunNo).get(4, 0) + 10,
+                        "DCK2Status": HHhdlist.gun.get(gunNo).get(4, 0) + 10,
+                        "DCPlusFuseStatus": 12,
+                        "DCMinusFuseStatus": 12,
+                        "conTemp1": HHhdlist.gun.get(gunNo).get(122, 0) * 10,
+                        "conTemp2": HHhdlist.gun.get(gunNo).get(123, 0) * 10,
+                        "dcVol": HHhdlist.gun.get(gunNo).get(112, 0),
+                        "dcCur": HHhdlist.gun.get(gunNo).get(123, 0),
+                    }
+                    HTools.Htool_plamform_property(17, dc_nonWork)
                 except Exception as e:
-                    print(f"{e} .{inspect.currentframe().f_lineno}")
+                    print(f"{e}")
                     return False
     else:
         try:
@@ -992,7 +1022,7 @@ def app_charging_record(msg_body_dict: dict):
             HTools.Htool_orderUpdateEvt(info)
             HStategrid.save_DeviceOrder(info)
         except Exception as e:
-            HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"{e}")
             return False
 
 
@@ -1067,10 +1097,16 @@ def app_rate_request(msg_body_dict: dict):
         if count == -1:
             HSyslog.log_info(f"费率请求错误")
         if 0 < count < 8:
+            eleModelId = HStategrid.get_DeviceInfo("eleModelId")
+            serModelId = HStategrid.get_DeviceInfo("serModelId")
+            if eleModelId is None or eleModelId == "":
+                eleModelId = ""
+            if serModelId is None or serModelId == "":
+                serModelId = ""
             info = {
                 "gunNo": 1,
-                "eleModelId": HStategrid.get_DeviceInfo("eleModelId"),
-                "serModelId": HStategrid.get_DeviceInfo("serModelId")
+                "eleModelId": eleModelId,
+                "serModelId": serModelId
             }
         if count == 0:
             info = {
@@ -1080,7 +1116,7 @@ def app_rate_request(msg_body_dict: dict):
             }
         HTools.Htool_send_askFeeModelEvt(info)
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
 
 
 '''充电启动策略请求消息'''
@@ -1143,7 +1179,7 @@ def app_charge_session(msg_body_dict: dict):
 
         app_charge_session_response(0)
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
 
 
 '''读取版本号消息'''
@@ -1400,7 +1436,7 @@ def app_parameter_fetch_response(msg_body_dict: dict):
 
         return 0
     except Exception as e:
-        HSyslog.log_info(f"app_parameter_fetch_response's error: {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"app_parameter_fetch_response's error: {e}")
 
 
 '''时间同步消息'''
@@ -1629,7 +1665,7 @@ def app_charge_control(msg_body_dict: dict):
                 HHhdlist.device_charfer_p[gunNo].update({"stop_type": 0})
                 HHhdlist.device_charfer_p[gunNo].update({"stop_condition": 0})
             except Exception as e:
-                HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+                HSyslog.log_info(f"{e}")
                 HSyslog.log_info(HHhdlist.device_charfer_p.get("preTradeNo") + e)
     else:
         HSyslog.log_info("控制消息有误")
@@ -1645,7 +1681,7 @@ def app_authentication_response(msg_body_dict: dict):
         app_publish(topic, msg_body_dict)
         return True
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
         return False
 
 
@@ -1803,7 +1839,7 @@ def app_charge_rate_sync_message(msg_body_dict: dict, type=1, count=1):
         chargeFee = msg_body_dict.get("chargeFee", [])
         serviceFee = msg_body_dict.get("serviceFee", [])
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
         HSyslog.log_info(f"app_charge_rate_sync_message: {msg_body_dict}")
         return False
 
@@ -1894,7 +1930,7 @@ def app_charge_rate_sync_message(msg_body_dict: dict, type=1, count=1):
         app_publish(topic, msg)
         return True
     except Exception as e:
-        HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"{e}")
         HSyslog.log_info(f"app_charge_rate_sync_message: {msg}")
         return False
 
@@ -2043,22 +2079,22 @@ app_func_dict = {
     "/hqc/main/event-reply/charge-record": {"isSubscribe": False, "isResp": False, "qos": 2, "func": None},
     "/hqc/main/event-notify/charge-cost": {"isSubscribe": True, "isResp": False, "qos": 2,
                                            "func": app_charge_fee},
-    "/hqc/main/event-notify/charge-elec": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/main/event-notify/charge-elec": {"isSubscribe": False, "isResp": False, "qos": 2,
                                            "func": app_charge_battery_frozen},
     "/hqc/main/event-notify/charge-account": {"isSubscribe": False, "isResp": False, "qos": 1, "func": None},
     "/hqc/cloud/event-notify/recharge": {"isSubscribe": False, "isResp": True, "qos": 2, "func": None},
-    "/hqc/cloud/event-reply/recharge": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/cloud/event-reply/recharge": {"isSubscribe": False, "isResp": False, "qos": 2,
                                         "func": app_account_recharge_response},
     "/hqc/cloud/event-notify/request-rate": {"isSubscribe": True, "isResp": True, "qos": 2,
                                              "func": app_rate_request},
     "/hqc/cloud/event-reply/request-rate": {"isSubscribe": False, "isResp": False, "qos": 2, "func": None},
-    "/hqc/cloud/event-notify/request-startup": {"isSubscribe": True, "isResp": True, "qos": 2,
+    "/hqc/cloud/event-notify/request-startup": {"isSubscribe": False, "isResp": True, "qos": 2,
                                                 "func": app_charge_start_strategy_request},
     "/hqc/cloud/event-reply/request-startup": {"isSubscribe": False, "isResp": False, "qos": 2, "func": None},
-    "/hqc/cloud/event-notify/request-dispatch": {"isSubscribe": True, "isResp": True, "qos": 2,
+    "/hqc/cloud/event-notify/request-dispatch": {"isSubscribe": False, "isResp": True, "qos": 2,
                                                  "func": app_power_allocation_policy_request},
     "/hqc/cloud/event-reply/request-dispatch": {"isSubscribe": False, "isResp": False, "qos": 2, "func": None},
-    "/hqc/cloud/event-notify/request-offlinelist": {"isSubscribe": True, "isResp": True, "qos": 2,
+    "/hqc/cloud/event-notify/request-offlinelist": {"isSubscribe": False, "isResp": True, "qos": 2,
                                                     "func": app_offline_list_version_request},
     "/hqc/cloud/event-reply/request-offlinelist": {"isSubscribe": False, "isResp": False, "qos": 2, "func": None},
     "/hqc/main/event-notify/charge-session": {"isSubscribe": True, "isResp": True, "qos": 1,
@@ -2075,19 +2111,19 @@ app_func_dict = {
     "/hqc/main/event-reply/update-rate": {"isSubscribe": True, "isResp": False, "qos": 2,
                                           "func": app_charge_rate_sync_response},
     "/hqc/main/event-notify/update-startup": {"isSubscribe": False, "isResp": True, "qos": 2, "func": None},
-    "/hqc/main/event-reply/update-startup": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/main/event-reply/update-startup": {"isSubscribe": False, "isResp": False, "qos": 2,
                                              "func": app_charge_start_strategy_sync_response},
     "/hqc/main/event-notify/update-dispatch": {"isSubscribe": False, "isResp": True, "qos": 2, "func": None},
-    "/hqc/main/event-reply/update-dispatch": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/main/event-reply/update-dispatch": {"isSubscribe": False, "isResp": False, "qos": 2,
                                               "func": app_power_allocation_strategy_sync_response},
     "/hqc/main/event-notify/update-offlinelist": {"isSubscribe": False, "isResp": True, "qos": 2, "func": None},
-    "/hqc/main/event-reply/update-offflinelist": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/main/event-reply/update-offflinelist": {"isSubscribe": False, "isResp": False, "qos": 2,
                                                   "func": app_offline_list_version_sync_response},
     "/hqc/main/event-notify/offlinelist-log": {"isSubscribe": False, "isResp": True, "qos": 2, "func": None},
-    "/hqc/main/event-reply/offlinelist-log": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/main/event-reply/offlinelist-log": {"isSubscribe": False, "isResp": False, "qos": 2,
                                               "func": app_offline_list_operation_log_response},
     "/hqc/main/event-notify/clear": {"isSubscribe": False, "isResp": True, "qos": 2, "func": None},
-    "/hqc/main/event-reply/clear": {"isSubscribe": True, "isResp": False, "qos": 2,
+    "/hqc/main/event-reply/clear": {"isSubscribe": False, "isResp": False, "qos": 2,
                                     "func": app_clear_faults_event_response},
     "/hqc/sys/upgrade-notify/notify": {"isSubscribe": False, "isResp": True, "qos": 1, "func": None},
     "/hqc/sys/upgrade-reply/notify": {"isSubscribe": True, "isResp": False, "qos": 1,
@@ -2104,9 +2140,9 @@ app_func_dict = {
     "/hqc/main/event-reply/read-param": {"isSubscribe": True, "isResp": False, "qos": 1,
                                          "func": app_parameter_fetch_response},
     "/hqc/main/event-notify/read-fault": {"isSubscribe": False, "isResp": True, "qos": 1, "func": None},
-    "/hqc/main/event-reply/read-fault": {"isSubscribe": True, "isResp": False, "qos": 1,
+    "/hqc/main/event-reply/read-fault": {"isSubscribe": False, "isResp": False, "qos": 1,
                                          "func": app_current_history_fetch_response},
     "/hqc/main/event-notify/read-event": {"isSubscribe": False, "isResp": True, "qos": 1, "func": None},
-    "/hqc/main/event-reply/read-event": {"isSubscribe": True, "isResp": False, "qos": 1,
+    "/hqc/main/event-reply/read-event": {"isSubscribe": False, "isResp": False, "qos": 1,
                                          "func": app_event_Event_fetch_response}
 }

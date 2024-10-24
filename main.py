@@ -8,6 +8,7 @@ import HPlatform
 import HHhdlist
 import HStategrid
 import HSyslog
+import PROTOCOL
 
 
 # null_writer = NullWriter()
@@ -29,12 +30,10 @@ def main():
         while True:
             if HStategrid.get_DeviceInfo("deviceCode") is None or HStategrid.get_DeviceInfo("deviceCode") == "":
                 deviceCode = HHhdlist.read_json_config("deviceCode")
-                # deviceName = HHhdlist.read_json_config("deviceName")
                 if deviceCode is None or deviceCode == "":
                     time.sleep(10)
                 else:
                     HStategrid.save_DeviceInfo("deviceCode", 1, deviceCode, 0)
-                    # HStategrid.save_DeviceInfo("deviceName", 1, deviceName, 0)
                     break
             else:
                 if HStategrid.get_DeviceInfo("productKey") is None or HStategrid.get_DeviceInfo("productKey") == "0" or HStategrid.get_DeviceInfo("productKey") == "":
@@ -47,13 +46,21 @@ def main():
                     HHhdlist.save_json_config({"deviceSecret": HStategrid.get_DeviceInfo("deviceSecret")})
                 break
         HPlatform.linkkit_init()
+        HHhdlist.time_sync_time = int(time.time())
     except Exception as e:
-        HSyslog.log_info(f"HPlatform.linkkit_init error: {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"HPlatform.linkkit_init error: {e}")
     try:
         while True:
-            pass
+            if HStategrid.get_link_init_status() == 1:
+                if int(time.time()) - HHhdlist.time_sync_time >= 86400 and HPlatform.send_event_queue.empty():
+                    PROTOCOL.iot_linkkit_time_sync()
+                    HHhdlist.time_sync_time = int(time.time())
+                else:
+                    pass
+            else:
+                pass
     except Exception as e:
-        HSyslog.log_info(f"HPlatform.mainloop error: {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"HPlatform.mainloop error: {e}")
 
 
 if __name__ == "__main__":

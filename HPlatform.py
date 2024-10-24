@@ -17,6 +17,7 @@ import HHhdlist
 from PROTOCOL import *
 
 dcPile_property = None
+fault_property = None
 dc_work_property = None
 dc_nonWork_property = None
 meter_property = None
@@ -71,22 +72,30 @@ def linkkit_init():
         else:
             break
     try:
-        init_data = {
-            "device_uid": HStategrid.get_DeviceInfo("deviceCode")
-        }
-
+        if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
+            init_data = {
+                "device_uid": HStategrid.get_DeviceInfo("deviceCode"),
+            }
+        elif HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceRegCode.value:
+            init_data = {
+                "device_reg_code": HStategrid.get_DeviceInfo("deviceCode"),
+            }
         init_data_json = json.dumps(init_data)
         iot_linkkit_init(init_data_json)
         result = HStategrid.get_VerInfoEvt(4)
         if result[0] is not None:
+            HSyslog.log_info(f"set_version: {result[0]}")
             set_version(result[0])
-        HStategrid.save_DeviceInfo("SDKVersion", 1, "A0.4.240913", 0)
+        HStategrid.save_DeviceInfo("SDKVersion", 1, "A.0.5.241016", 0)
         HStategrid.save_DeviceInfo("UIVersion", 1, HHhdlist.read_json_config("ui_version"), 0)
-        HHhdlist.save_json_config({"SDKVersion": "A0.4.240913"})
+        HHhdlist.save_json_config({"SDKVersion": "A.0.5.241016"})
         HHhdlist.save_json_config({"Platform_type": "GW_SDK"})
         time.sleep(3)
 
-        iot_link_connect(0, 1)
+        if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
+            iot_link_connect(0, 1)
+        elif HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceRegCode.value:
+            iot_link_connect(0, 0)
         plamform_server()
         do_plamform_send()
         HStategrid.gun_num = HStategrid.get_DeviceInfo("00110")
@@ -94,8 +103,9 @@ def linkkit_init():
             for i in range(0, HStategrid.gun_num):
                 HHhdlist.device_charfer_p[i + 1] = {}
                 HHhdlist.bms_sum[i + 1] = 1
+                HStategrid.send_gunElecFreq[i + 1] = 0
     except Exception as e:
-        HSyslog.log_info(f"linkkit_init error: {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"linkkit_init error: {e}")
 
 
 # -------------------- 发送事件 ------------------ #
@@ -106,7 +116,7 @@ def plamform_event(event_type: int, info_dict: dict):
         send_event_queue.put([event_type, info_json])
         return 0
     except Exception as e:
-        HSyslog.log_info(f"input_data---info_dict: {info_dict}. {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"input_data---info_dict: {info_dict}. {e}")
         return -1
 
 
@@ -135,7 +145,7 @@ def __plamform_send():
                         else:
                             HSyslog.log_info("info_msg send error")
                 except Exception as e:
-                    HSyslog.log_info(f"{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"{e}")
         else:
             if send_event_queue.empty():
                 time.sleep(0.1)
@@ -151,14 +161,16 @@ def plamform_property(property_type: int, property_dict: dict):
         property_json = json.dumps(property_dict)
         send_event_queue.put([property_type, property_json])
     except Exception as e:
-        HSyslog.log_info(f"input_data---info_dict: {property_dict}. {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"input_data---info_dict: {property_dict}. {e}")
         return -1
 
 
 def plamform_property_thread(info_dict: dict):
+    HStategrid.gunElecFreq_time = info_dict.get("gunElecFreq")
     global property_start
     global dcPile_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
     dcPile_property = PeriodicFunctionCaller(info_dict.get("equipParamFreq", 600), _send_property_dcPile)
+    fault_property = PeriodicFunctionCaller(info_dict.get("faultWarnings", 360), _send_property_fault)
     dc_work_property = PeriodicFunctionCaller(5, _send_property_dc_work)
     dc_nonWork_property = PeriodicFunctionCaller(info_dict.get("nonElecFreq", 180), _send_property_dc_nonWork)
     meter_property = PeriodicFunctionCaller(info_dict.get("dcMeterFreq", 300) * 60, _send_property_meter)
@@ -166,6 +178,9 @@ def plamform_property_thread(info_dict: dict):
     dc_input_meter_property = PeriodicFunctionCaller(info_dict.get("acMeterFreq", 300) * 60, _send_property_dc_input_meter)
     if not dcPile_property.cleck_thread_status():
         dcPile_property.start_periodic_calling()
+        time.sleep(1)
+    if not fault_property.cleck_thread_status():
+        fault_property.start_periodic_calling()
         time.sleep(1)
     if not dc_work_property.cleck_thread_status():
         dc_work_property.start_periodic_calling()
@@ -195,10 +210,13 @@ def _send_property_dcPile():
             if eleModelId is None or serModelId is None or eleModelId == "" or serModelId == "":
                 eleModelId = ""
                 serModelId = ""
+            netType = HStategrid.platform_data.get("netType", 13)
+            sigVal = HStategrid.platform_data.get("sigVal", 10)
+            netId = HStategrid.platform_data.get("netId", 14)
             dcPile = {
-                "netType": HStategrid.platform_data.get("netType", 13),
-                "sigVal": HStategrid.platform_data.get("sigVal", 10),
-                "netId": HStategrid.platform_data.get("netId", 14),
+                "netType": netType,
+                "sigVal": sigVal,
+                "netId": netId,
                 "acVolA": 380,
                 "acCurA": 0,
                 "acVolB": 380,
@@ -212,7 +230,11 @@ def _send_property_dcPile():
                 "serModelId": serModelId,
             }
             plamform_property(15, dcPile)
-            HSyslog.log_info(HHhdlist.device_charfer_p)
+        except Exception as e:
+            HSyslog.log_info(f"Send_Property_to_Platform_dcPile Failed. {e}")
+            return ""
+
+        try:
             qrcode = HHhdlist.read_json_config("qrcode")
             if qrcode is None:
                 qrcode = {}
@@ -228,7 +250,37 @@ def _send_property_dcPile():
                     HHhdlist.save_json_config({"qrcode": qrcode})
             return "dcPile"
         except Exception as e:
-            HSyslog.log_info(f"Send_Property_to_Platform_dcPile Failed. {e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_QrCode Failed. {e}")
+            return ""
+
+
+def _send_property_fault():
+    if HStategrid.get_property_status() == 1:
+        try:
+            if HHhdlist.device_fault != {}:
+                HSyslog.log_info(HHhdlist.device_fault)
+                for i in range(0, HStategrid.gun_num):
+                    if HHhdlist.device_fault.get(i + 1, {}) != {}:
+                        gunNo = i + 1
+                        fault = {
+                            "gunNo": gunNo,
+                            "faultSum": HHhdlist.device_fault.get(gunNo).get("faultSum"),
+                            "warnSum": HHhdlist.device_fault.get(gunNo).get("warnSum"),
+                            "faultValue": HHhdlist.device_fault.get(gunNo).get("faultValue"),
+                            "warnValue": HHhdlist.device_fault.get(gunNo).get("warnValue"),
+                        }
+                    else:
+                        fault = {
+                            "gunNo": i + 1,
+                            "faultSum": 0,
+                            "warnSum": 0,
+                            "faultValue": [],
+                            "warnValue": [],
+                        }
+                    send_totalFaultEvt(fault)
+            return "fault"
+        except Exception as e:
+            HSyslog.log_info(f"Send_Property_to_Platform_totalFaultEvt Failed. {e}")
             return ""
 
 
@@ -238,6 +290,7 @@ def _send_property_dc_work():
             for i in HHhdlist.gun.keys():
                 if HHhdlist.gun.get(i).get(1) == 6:
                     preTradeNo_data = HHhdlist.device_charfer_p.get(i)
+                    chgTime = int(preTradeNo_data.get("charge_time", 0))
                     dc_work = {
                         "gunNo": i,
                         "workStatus": 13,
@@ -255,7 +308,7 @@ def _send_property_dc_work():
                         "tradeNo": preTradeNo_data.get("tradeNo", ""),
                         "chgType": preTradeNo_data.get("startType", 0),
                         "realPower": HHhdlist.gun.get(i).get(115, 0),
-                        "chgTime": int(preTradeNo_data.get("charge_time", 0) / 60),
+                        "chgTime": chgTime / 60,
                         "socVal": HHhdlist.bms.get(i).get(106, 0),
                         "needVol": HHhdlist.bms.get(i).get(100, 0),
                         "needCur": HHhdlist.bms.get(i).get(101, 0),
@@ -275,10 +328,16 @@ def _send_property_dc_work():
                         "totalPowerCost": preTradeNo_data.get("total_electric_cost", 0) * 10,
                         "totalServCost": preTradeNo_data.get("total_service_cost", 0) * 10
                     }
-                    plamform_property(16, dc_work)
+                    if chgTime <= 60:
+                        plamform_property(16, dc_work)
+                        HStategrid.send_gunElecFreq[i] = int(time.time())
+                    else:
+                        if int(time.time()) - HStategrid.send_gunElecFreq[i] >= HStategrid.get_DeviceInfo("gunElecFreq"):
+                            HStategrid.send_gunElecFreq[i] = int(time.time())
+                            plamform_property(16, dc_work)
             return "dc_work"
         except Exception as e:
-            HSyslog.log_info(f"Send_Property_to_Platform_dc_work Failed. {e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dc_work Failed. {e}")
             return ""
 
 
@@ -306,7 +365,7 @@ def _send_property_dc_nonWork():
                     plamform_property(17, dc_nonWork)
             return "dc_nonWork"
         except Exception as e:
-            HSyslog.log_info(f"Send_Property_to_Platform_dc_nonWork Failed. {e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dc_nonWork Failed. {e}")
             return ""
 
 
@@ -348,7 +407,7 @@ def _send_property_meter():
                 HStategrid.save_dcOutMeterIty(meter_log)
             return "meter"
         except Exception as e:
-            HSyslog.log_info(f"Send_Property_to_Platform_meter Failed. {e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_Property_to_Platform_meter Failed. {e}")
             return ""
 
 
@@ -381,7 +440,7 @@ def _send_property_BMS():
                         HHhdlist.bms_sum[i] = HHhdlist.bms_sum[i] + 1
             return "BMS"
         except Exception as e:
-            HSyslog.log_info(f"Send_Property_to_Platform_BMS Failed. {e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_Property_to_Platform_BMS Failed. {e}")
             return ""
 
 
@@ -403,7 +462,7 @@ def _send_property_dc_input_meter():
                 plamform_property(20, dc_input_meter)
             return "dc_input_meter"
         except Exception as e:
-            HSyslog.log_info(f"Send_Property_to_Platform_dc_input_meter Failed. {e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_Property_to_Platform_dc_input_meter Failed. {e}")
             return ""
 
 
@@ -454,7 +513,7 @@ def service_query_log(data_json):  # 日志查询
         send_logQueryEvt(info_dict)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_query_log: {data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_query_log: {data_json} .{e}")
         return ""
 
 
@@ -507,6 +566,7 @@ def service_dev_maintain(data_json):  # 充电机状态控制
                 "reason": 10
             }
             json_str = json.dumps(data)
+            time.sleep(3)
             subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
             subprocess.run(['supervisorctl', 'restart', 'internal'])
             subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
@@ -521,7 +581,7 @@ def service_dev_maintain(data_json):  # 充电机状态控制
             subprocess.run(['supervisorctl', 'stop', 'internal_ocpp'])
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_dev_maintain. {data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_dev_maintain. {data_json} .{e}")
         return ""
 
 
@@ -534,6 +594,7 @@ def service_lockCtrl(data_json):  # 电子锁控制
             info = {
                 'device_type': 2,
                 'device_num': info_dict.get("gunNo") - 1,
+                'source': 0,
                 'count': 1,
                 'items': [{"id": 90, "type": 0, "intvalue": 1}]
             }
@@ -542,53 +603,31 @@ def service_lockCtrl(data_json):  # 电子锁控制
             info = {
                 'device_type': 2,
                 'device_num': info_dict.get("gunNo"),
+                'source': 0,
                 'count': 1,
                 'items': [{"id": 90, "type": 0, "intvalue": 0}]
             }
             HTools.Htool_app_set_parameters(info)
 
         try:
-            msg = HTools.Htool_app_set_parameter_response()
-            if msg == -1:
-                return ""
-            if msg.get("count") == 1 and msg.get("valid_id")[0] == 90:
-                data = {
-                    "gunNo": info_dict.get("gunNo"),
-                    "lockStatus": lockParam,
-                    "resCode": 10
-                }
-            elif msg.get("count") == 1 and msg.get("invalid_id")[0] == 90:
-                if lockParam == 10:
-                    data = {
-                        "gunNo": info_dict.get("gunNo"),
-                        "lockStatus": 10,
-                        "resCode": 12
-                    }
-                if lockParam == 11:
-                    data = {
-                        "gunNo": info_dict.get("gunNo"),
-                        "lockStatus": 11,
-                        "resCode": 11
-                    }
-            else:
-                data = {
-                    "gunNo": info_dict.get("gunNo"),
-                    "lockStatus": lockParam,
-                    "resCode": 13
-                }
+            data = {
+                "gunNo": info_dict.get("gunNo"),
+                "lockStatus": lockParam,
+                "resCode": 10
+            }
             json_str = json.dumps(data)
             return json_str
         except Exception as e:
-            print(f"{e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"{e}")
             data = {
                 "gunNo": info_dict.get("gunNo"),
-                "lockStatus": info_dict.get("lockStatus"),
+                "lockStatus": lockParam,
                 "resCode": 13
             }
             json_str = json.dumps(data)
             return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_lockCtrl .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_lockCtrl .{data_json} .{e}")
         return ""
 
 
@@ -604,7 +643,7 @@ def service_issue_feeModel(data_json):  # 费率更新
         json_str = json.dumps(msg)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_issue_feeModel .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_issue_feeModel .{data_json} .{e}")
         return ""
 
 
@@ -617,7 +656,7 @@ def service_startCharge(data_json):  # 启动充电
             if HHhdlist.device_charfer_p.get(gunNo) != {}:
                 data = {
                     "gunNo": gunNo,
-                    "preTradeNo": info_dict.get(gunNo).get("preTradeNo", ""),
+                    "preTradeNo": info_dict.get("preTradeNo", ""),
                     "tradeNo": info_dict.get("tradeNo", ""),
                     "startResult": 14,
                     "faultCode": 1008,
@@ -633,7 +672,7 @@ def service_startCharge(data_json):  # 启动充电
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e}")
                     return ""
             else:
                 if gunNo not in HHhdlist.device_charfer_p:
@@ -666,7 +705,7 @@ def service_startCharge(data_json):  # 启动充电
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e}")
                     return ""
 
         elif info_dict.get("startMode") == 11:
@@ -689,7 +728,7 @@ def service_startCharge(data_json):  # 启动充电
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e}")
                     return ""
             else:
                 if gunNo not in HHhdlist.device_charfer_p:
@@ -723,11 +762,11 @@ def service_startCharge(data_json):  # 启动充电
                     json_str = json.dumps(data)
                     return json_str
                 except Exception as e:
-                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+                    HSyslog.log_info(f"Service_startCharge .{data_json} .{e}")
                     return ""
 
     except Exception as e:
-        HSyslog.log_info(f"Service_startCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_startCharge .{data_json} .{e}")
         return ""
 
 
@@ -752,7 +791,7 @@ def service_authCharge(data_json):  # 鉴权结果
         }
         HTools.Htool_app_charge_control(info)  # 传入设备
     except Exception as e:
-        HSyslog.log_info(f"Service_authCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_authCharge .{data_json} .{e}")
         return ""
 
     try:
@@ -764,7 +803,7 @@ def service_authCharge(data_json):  # 鉴权结果
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_authCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_authCharge .{data_json} .{e}")
         return ""
 
 
@@ -782,7 +821,7 @@ def service_stopCharge(data_json):  # 停止充电
         }
         HTools.Htool_app_charge_control(info)  # 传入设备
     except Exception as e:
-        HSyslog.log_info(f"Service_stopCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_stopCharge .{data_json} .{e}")
         return ""
 
     try:
@@ -794,7 +833,7 @@ def service_stopCharge(data_json):  # 停止充电
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_stopCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_stopCharge .{data_json} .{e}")
         return ""
 
 
@@ -811,7 +850,7 @@ def service_rsvCharge(data_json):  # 预约充电
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_rsvCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_rsvCharge .{data_json} .{e}")
         return ""
 
 
@@ -854,7 +893,7 @@ def service_confirmTrade(data_json):  # 充电记录上传确认
                 HHhdlist.bms_sum.update({gunNo: 1})
         return 0
     except Exception as e:
-        HSyslog.log_info(f"Service_confirmTrade .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_confirmTrade .{data_json} .{e}")
         return -1
 
 
@@ -870,7 +909,7 @@ def service_groundLock_ctrl(data_json):  # 地锁控制
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_groundLock_ctrl .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_groundLock_ctrl .{data_json} .{e}")
         return ""
 
 
@@ -885,7 +924,7 @@ def service_gateLock_ctrl(data_json):  # 门锁控制
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_gateLock_ctrl .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_gateLock_ctrl .{data_json} .{e}")
         return ""
 
 
@@ -897,7 +936,7 @@ def service_orderCharge(data_json):  # 充电策略服务
             log = threading.Thread(target=set_orderCharge, args=(info_dict,))
             log.start()
         except Exception as e:
-            HSyslog.log_info(f"Service_orderCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Service_orderCharge .{data_json} .{e}")
             return ""
 
         data = {
@@ -908,7 +947,7 @@ def service_orderCharge(data_json):  # 充电策略服务
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_orderCharge .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_orderCharge .{data_json} .{e}")
         return ""
 
 
@@ -934,7 +973,7 @@ def service_get_config(data_json):  # 获取配置
         json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_get_config .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_get_config .{data_json} .{e}")
         return ""
 
 
@@ -955,37 +994,44 @@ def service_update_config(data_json):  # 更新配置
         info_offlinChaLen = {
             'device_type': 0,
             'device_num': 0,
+            'source': 0,
             'count': 2,
             'items': [{"id": 125, "type": 0, "intvalue": 0},
                       {"id": 130, "type": 0, "intvalue": int(info_dict.get("offlinChaLen")) * 60}]
         }
         HTools.Htool_app_set_parameters(info_offlinChaLen)
     except Exception as e:
-        HSyslog.log_info(f"Service_update_config .{info_offlinChaLen} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_update_config .{info_offlinChaLen} .{e}")
         return -1
 
     try:
         global property_start
-        global dcPile_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
+        global dcPile_property, fault_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
         HStategrid.set_flaut_status(1)
         if property_start == 0:
             plamform_property_thread(info_dict)
         else:
-            dcPile_property.set_interval(60)
+            dcPile_property.set_interval(info_dict.get("equipParamFreq"))
+            fault_property.set_interval(info_dict.get("faultWarnings"))
             dc_work_property.set_interval(5)
             dc_nonWork_property.set_interval(info_dict.get("nonElecFreq"))
             dc_input_meter_property.set_interval(info_dict.get("acMeterFreq") * 60)
             BMS_property.set_interval(30)
             meter_property.set_interval(info_dict.get("dcMeterFreq") * 60)
     except Exception as e:
-        HSyslog.log_info(f"Service_update_config .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_update_config .{e}")
         return -1
 
     try:
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
         gun_num = HStategrid.gun_num
-        qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
-
+        if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
+        elif HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceRegCode.value:
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:1:{deviceCode}:FFFFFFFFFFFF:00"
+        else:
+            deviceName = HStategrid.get_DeviceInfo("deviceName")
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:2:{deviceName}:FFFFFFFFFFFF:00"
         for i in range(0, gun_num):
             info_qrCode = {
                 "gun_id": i,
@@ -998,7 +1044,7 @@ def service_update_config(data_json):  # 更新配置
             HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
             return 10
     except Exception as e:
-        HSyslog.log_info(f"qrCode .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"qrCode .{data_json} .{e}")
         return -1
 
 
@@ -1009,7 +1055,7 @@ def service_ota_update(new_version: str):  # 固件升级
             if charge == {}:
                 status = status + 1
     except Exception as e:
-        HSyslog.log_info(f"Service_ota_update .{status} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_ota_update .{status} .{e}")
         return [-4, -4]
 
     if status == HStategrid.gun_num:
@@ -1027,7 +1073,7 @@ def service_ota_update(new_version: str):  # 固件升级
                 }
                 HTools.Htool_app_upgrade_control(ota_info)
             except Exception as e:
-                HSyslog.log_info(f"Service_ota_update .{new_version} .{e} .{inspect.currentframe().f_lineno}")
+                HSyslog.log_info(f"Service_ota_update .{new_version} .{e}")
                 return [-4, -4]
 
         else:
@@ -1043,7 +1089,7 @@ def service_ota_update(new_version: str):  # 固件升级
                 else:
                     HSyslog.log_info(f"ota: {new_version}")
             except Exception as e:
-                HSyslog.log_info(f"Service_ota_update .{new_version} .{e} .{inspect.currentframe().f_lineno}")
+                HSyslog.log_info(f"Service_ota_update .{new_version} .{e}")
                 return [-4, -4]
     else:
         get_otaprogress(-4)
@@ -1079,7 +1125,7 @@ def service_time_sync(data_json):  # 时钟同步
         subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
         return 0
     except Exception as e:
-        HSyslog.log_info(f"Service_time_sync .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_time_sync .{data_json} .{e}")
         return ""
 
 
@@ -1099,6 +1145,7 @@ def service_connectSucc(data_json):  # 连接成功
         HStategrid.set_link_init_status(info_dict.get("onlink_status"))
         while True:
             if HHhdlist.device_mqtt_status:
+                # HStategrid.set_flaut_status(1)
                 send_firmwareEvt()
                 send_verInfoEvt("DTU")
                 send_askConfigEvt()
@@ -1108,19 +1155,20 @@ def service_connectSucc(data_json):  # 连接成功
         HSyslog.log_info(f"onlink_status: {HStategrid.link_init_status}")
         return HStategrid.get_link_init_status()
     except Exception as e:
-        HSyslog.log_info(f"Service_connectSucc .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_connectSucc .{data_json} .{e}")
         return -1
 
 
 def service_disConnected(data_json):  # 断开连接
     try:
+        HTools.Htool_app_net_status(HHhdlist.net_type.no_net.value, 0, HHhdlist.net_id.id_4G.value)
         HSyslog.log_info(f"Service_disConnected: {data_json}")
         info_dict = json.loads(data_json)
         HStategrid.set_link_init_status(info_dict.get("onlink_status"))
         HSyslog.log_info(f"onlink_status: {HStategrid.link_init_status}")
-        return HStategrid.link_init_status
+        return HStategrid.get_link_init_status()
     except Exception as e:
-        HSyslog.log_info(f"Service_disConnected .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_disConnected .{data_json} .{e}")
         return -1
 
 
@@ -1143,7 +1191,7 @@ def service_trigEvevtReply(data_json):  # 事件回调
         #     else:
         #         HStategrid.ack_num[msgid].update({"ack": False})
     except Exception as e:
-        HSyslog.log_info(f"Service_trigEvevtReply .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_trigEvevtReply .{data_json} .{e}")
         return -1
 
 
@@ -1163,7 +1211,7 @@ def service_certSet(data_json):  # 设置属性
 
         return 0
     except Exception as e:
-        HSyslog.log_info(f"Service_certSet .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_certSet .{data_json} .{e}")
         return -1
 
 
@@ -1176,7 +1224,7 @@ def service_deregCodeGet(data_json):  # 获取注册码
         else:
             return ""
     except Exception as e:
-        HSyslog.log_info(f"Service_deregCodeGet .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_deregCodeGet .{data_json} .{e}")
         return -1
 
 
@@ -1187,7 +1235,7 @@ def service_uidGet(data_json):  # 获取设备UID
         if deviceCode is not None and deviceCode != "":
             return deviceCode
     except Exception as e:
-        HSyslog.log_info(f"Service_uidGet .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_uidGet .{data_json} .{e}")
         return -1
 
 
@@ -1203,7 +1251,7 @@ def service_mainres(data_json):  # 设备状态查询
         HSyslog.log_info(json_str)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_mainres .{data_json} .{e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"Service_mainres .{data_json} .{e}")
         return ""
 
 
@@ -1251,6 +1299,9 @@ def send_firmwareEvt():
         simNo = HStategrid.get_DeviceInfo("00102")
         if simNo is None:
             simNo = ""
+        otCur = HStategrid.get_DeviceInfo("00115")
+        if otCur is None:
+            otCur = 2500
         info_dict = {
             "simNo": simNo,
             "eleModelId": eleModelId,
@@ -1270,7 +1321,7 @@ def send_firmwareEvt():
             "otRate": HStategrid.gun_num * HStategrid.get_DeviceInfo("00117") * 0.01,
             "otMinVol": float(HStategrid.get_DeviceInfo("00114") * 0.1),
             "otMaxVol": float(HStategrid.get_DeviceInfo("00113") * 0.1),
-            "otCur": HStategrid.get_DeviceInfo("00115"),
+            "otCur": otCur,
             "inMeter": [],
             "outMeter": outMeter,
             "CT": 0,
@@ -1281,7 +1332,13 @@ def send_firmwareEvt():
             for i in range(0, HStategrid.gun_num):
                 HHhdlist.device_charfer_p[i + 1] = {}
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
-        qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
+        if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
+        elif HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceRegCode.value:
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:1:{deviceCode}:FFFFFFFFFFFF:00"
+        else:
+            deviceName = HStategrid.get_DeviceInfo("deviceName")
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:2:{deviceName}:FFFFFFFFFFFF:00"
         qrcode_ack = {}
         HSyslog.log_info(HStategrid.gun_num)
         for i in range(0, HStategrid.gun_num):
@@ -1298,7 +1355,7 @@ def send_firmwareEvt():
             HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
         return 0
     except Exception as e:
-        HSyslog.log_info(f"send_firmwareEvts error: {e} .{inspect.currentframe().f_lineno}")
+        HSyslog.log_info(f"send_firmwareEvts error: {e}")
         return -1
 
 
@@ -1357,7 +1414,7 @@ def send_smartLockEvent():
 def send_askConfigEvt():
     if HStategrid.get_DeviceInfo("equipParamFreq"):
         global property_start
-        global dcPile_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
+        global dcPile_property, fault_property, dc_work_property, dc_nonWork_property, dc_input_meter_property, BMS_property, meter_property
         try:
             qrCode = []
             for i in range(0, HStategrid.gun_num):
@@ -1377,13 +1434,14 @@ def send_askConfigEvt():
             }
             time.sleep(0.1)
         except Exception as e:
-            HSyslog.log_info(f"Send_askConfigEvt .{info_dict} .{e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_askConfigEvt .{info_dict} .{e}")
         try:
             HStategrid.set_flaut_status(1)
             if property_start == 0:
                 plamform_property_thread(info_dict)
             else:
                 dcPile_property.set_interval(info_dict.get("equipParamFreq"))
+                fault_property.set_interval(info_dict.get("faultWarnings"))
                 dc_work_property.set_interval(5)
                 dc_nonWork_property.set_interval(info_dict.get("nonElecFreq"))
                 dc_input_meter_property.set_interval(info_dict.get("acMeterFreq") * 60)
@@ -1393,7 +1451,7 @@ def send_askConfigEvt():
             set_data_dev_config(json.dumps(info_dict))
             return 0
         except Exception as e:
-            HSyslog.log_info(f"Send_askConfigEvt .{info_dict} .{e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_askConfigEvt .{info_dict} .{e}")
             return -1
     else:
         info_dict = {
@@ -1417,13 +1475,13 @@ def send_verInfoEvt(device_type):
             ui_version = HStategrid.get_DeviceInfo("UIVersion")
             info_dict = {
                 "devRegMethod": 10,
-                "pileSoftwareVer": f"Charger:{data[0]},SDK:{sdk_version},UI:{ui_version}",
+                "pileSoftwareVer": f"Charger:{data[0]}/SDK:{sdk_version}/UI:{ui_version}",
                 "pileHardwareVer": data[1],
                 "sdkVer": "SDK_v1.1.7"
             }
             return plamform_event(13, info_dict)
         except Exception as e:
-            HSyslog.log_info(f"Send_verInfoEvt .{e} .{inspect.currentframe().f_lineno}")
+            HSyslog.log_info(f"Send_verInfoEvt .{e}")
             return -1
 
 
@@ -1588,6 +1646,7 @@ def get_log(info_dict: dict):
                                 replace('"', "'").
                                 replace(',', ';'),
                             }
+                            HSyslog.log_info(data)
                             plamform_event(14, data)
                             time.sleep(0.1)
             else:
@@ -1610,6 +1669,7 @@ def get_log(info_dict: dict):
                                 replace('"', "'").
                                 replace(',', ';'),
                             }
+                            HSyslog.log_info(data)
                             plamform_event(14, data)
                             time.sleep(0.1)
     if info_dict.get("askType") == 14:
@@ -1649,6 +1709,7 @@ def get_log(info_dict: dict):
 
 
 def set_orderCharge(info_dict: dict):
+    HSyslog.log_info("开始限功率 。。。 ")
     preTradeNo = info_dict.get("preTradeNo")
     num = info_dict.get("num")
     validTime = info_dict.get("validTime")
@@ -1706,5 +1767,3 @@ def set_orderCharge(info_dict: dict):
                     return False
     else:
         return False
-
-

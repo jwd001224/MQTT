@@ -70,7 +70,7 @@ cdef iot_linkkit_new(evs_is_ready, is_device_uid):
         HSyslog.log_info("Failed To Set Device Certificate")
         return -3
 
-cdef iot_linkkit_time_sync():
+def iot_linkkit_time_sync():
     cdef int result = evs_linkkit_time_sync()
     if result == 0:
         print(green_char + f"Time Sync Successfully" + init_char)
@@ -1092,7 +1092,7 @@ cdef int callback_service_disConnected():
             print(red_char + f"{e}" + init_char)
             print(red_char + f"data_input_data: {json_str}" + init_char)
             return -1
-        print(f"MQTT DisConnected: {onlink_status}")
+        HSyslog.log_info(f"MQTT DisConnected: {onlink_status}")
         return 0
     except Exception as e:
         print(red_char + f"{e}" + init_char)

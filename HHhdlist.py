@@ -1,6 +1,7 @@
 import os
 import queue
 import threading
+import time
 from datetime import datetime
 from enum import Enum
 import json
@@ -10,6 +11,7 @@ config_file = '/opt/hhd/ex_cloud/DeviceCode.json'
 device_type = None
 
 device_mqtt_status = False
+time_sync_time = 0
 qr_queue = queue.Queue()
 fee_queue = queue.Queue()
 
@@ -52,6 +54,7 @@ charger_status = {
 }
 
 bms_sum = {}
+device_fault = {}
 
 topic_app_net_status = '/hqc/sys/network-state'
 topic_app_device_fault_query = '/hqc/cloud/event-notify/fault'
