@@ -1,7 +1,8 @@
 #!/bin/python3
-
+import socket
 from enum import Enum
 import random
+import paho.mqtt.client as mqtt
 from paho.mqtt import client as mqtt_client
 import time
 import queue
@@ -19,78 +20,122 @@ package_num = 0  # 包序号
 
 
 class HMqttClient:
-    def __init__(self, broker, port) -> None:
-        self.broker = broker
-        self.port = port
-        self.topiclist = None
-        self.connectStatus = False
-        self.client_id = None
-        self.clientDev = None
+    def __init__(self, broker_address, broker_port, keepalive=90, client_id="Device_MQTT"):
+        self.broker_address = broker_address
+        self.broker_port = broker_port
+        self.keepalive = keepalive
+        self.client_id = client_id
+        self.client = mqtt.Client(client_id=client_id)
+        self.send_thread = None
 
-    def connect_mqtt(self) -> mqtt_client:
-        self.client_id = f'internation-{random.randint(0, 1000)}'
-        client = mqtt_client.Client(self.client_id)
-        client.on_connect = self.on_connect  # 连接成功时的回调函数
-        client.on_message = self.on_message  # 连接成功时的订阅函数
-        client.on_disconnect = self.on_disconnect  # 断开连接的回调函数
-        client.connect(self.broker, self.port, keepalive=60)
-        self.clientDev = client
-        return self.clientDev
+    def connect(self, isReady=False):
+        """连接到MQTT服务器"""
+        try:
+            try:
+                # 设置回调函数
+                self.client.on_connect = self._on_connect
+                self.client.on_disconnect = self._on_disconnect
+                self.client.on_message = self._on_message
 
-    def on_connect(self, client, userdata, flags, rc):
+                self.client.connect(self.broker_address, self.broker_port, self.keepalive)
+                self.subscribe()
+                self.client.loop_start()  # 启动网络循环以处理连接
+                isReady = True
+                HSyslog.log_info(f"Connected to Device MQTT broker at {self.broker_address}:{self.broker_port}")
+            except Exception as e:
+                HSyslog.log_info(f"Failed to Device Connect to broker: {e}")
+
+            if isReady:
+                self.start_send_thread()
+        except socket.error as e:
+            HSyslog.log_info(f"connect_device: {e}")
+            time.sleep(5)
+
+    def start_send_thread(self):
+        if not self.send_thread or not self.send_thread.is_alive():
+            self.send_thread = threading.Thread(target=self._send_messages, daemon=True)
+            self.send_thread.start()
+
+    def disconnect(self):
+        """断开与MQTT服务器的连接"""
+        self.client.loop_stop()
+        self.client.disconnect()
+        HSyslog.log_info("Disconnected from Device MQTT broker")
+
+    def _on_connect(self, client, userdata, flags, rc):
+        """连接成功时的回调函数"""
         if rc == 0:
-            self.connectStatus = True
-            HSyslog.log_info("Connected to MQTT Broker!")
             HHhdlist.device_mqtt_status = True
+            HSyslog.log_info("Connected to Device MQTT Broker!")
         else:
-            self.connectStatus = False
-            HSyslog.log_info(f"Failed to connect, return code {rc}")
             HHhdlist.device_mqtt_status = False
+            HSyslog.log_info(f"Failed to device connect, return code {rc}")
 
-    def on_message(self, client, userdata, msg):
-        self.__subscribe(msg.payload.decode('utf-8', 'ignore'), msg.topic)
+    def _on_disconnect(self, client, userdata, rc):
+        """断开连接时的回调函数"""
+        HSyslog.log_info("check device connection is closed! rc = {}".format(rc))
+        HHhdlist.device_mqtt_status = False
+        # 断线自动重连
+        try:
+            if rc != 0:
+                HSyslog.log_info("Attempting to device reconnect...")
+                self.reconnect()
+        except Exception as e:
+            HSyslog.log_info(f"Device MQTT.close: {e}")
 
-    def on_disconnect(self, client, userdata, rc):
-        HSyslog.log_info("check connection is closed! rc = {}".format(rc))
-        self.connectStatus = False
-        self.clientDev.disconnect()
+    def reconnect(self):
+        """重新连接到MQTT服务器"""
+        try:
+            self.client.reconnect()
+            HSyslog.log_info("Reconnected to Device MQTT broker")
+        except Exception as e:
+            HSyslog.log_info(f"Device Reconnection failed: {e}")
 
-    def on_publish(self, client, userdata, mid):
-        pass
+    def subscribe(self):
+        """订阅主题"""
+        for topic, topic_dict in app_func_dict.items():
+            if topic_dict.get("isSubscribe"):
+                self.client.subscribe(topic)
+                HSyslog.log_info(f"Subscribed to topic: {topic}")
 
-    def init_mqtt(self, client):
-        client.on_publish = self.on_publish
-        client.on_disconnect = self.on_disconnect
+    def _on_message(self, client, userdata, msg):
 
-    def subscribe(self):  # 订阅
-        for dic in app_func_dict.keys():
-            if app_func_dict.get(dic).get("isSubscribe"):
-                self.clientDev.subscribe(topic=dic, qos=app_func_dict.get(dic).get("qos"))
-        if HStategrid.get_link_init_status() == 1:
-            app_net_status(HHhdlist.net_type.net_4G.value, 3, HHhdlist.net_id.id_4G.value)
-        else:
-            app_net_status(HHhdlist.net_type.no_net.value, 0, HHhdlist.net_id.id_4G.value)
+        """接收消息时的回调函数"""
+        try:
+            receive_msg = msg.payload.decode('utf-8', 'ignore')
+            topic = msg.topic
+            if receive_msg and topic:
+                if topic in app_func_dict.keys():
+                    receive_dict = json.loads(receive_msg)
+                    analysis_msg_dict(app_func_dict[topic], receive_dict, topic)
+                    if topic != "/hqc/main/telemetry-notify/info":
+                        HSyslog.log_info(f"Received Device message: '{receive_msg}' on topic {topic}")
+        except Exception as e:
+            HSyslog.log_info(f"device _receive_messages: '{msg}' {e}")
 
-    def publish(self, topic, msg, qos):  # 发布
-        if self.connectStatus:
-            result = self.clientDev.publish(topic, msg, qos)
-            if not result[0]:
-                print(f"Send: {msg} to topic: {topic}")
-                if topic != '/hqc/sys/network-state':
-                    HSyslog.log_info(f"Send_to_Device: {msg} to topic: {topic}")
-                return True
+    def _send_messages(self):
+        """向主题发送消息"""
+        while True:
+            if not DtoP_queue:
+                time.sleep(0.1)
             else:
-                HSyslog.log_info(f"Failed to send message to topic {topic}")
-                return False
-
-        return False
-
-    def __subscribe(self, msg, topic) -> bool:
-        print(f"Received: {msg} from topic:{topic}")
-        if topic != "/hqc/main/telemetry-notify/info":
-            HSyslog.log_info(f"Received_from_Device: {msg} to topic: {topic}")
-        app_subscribe(msg, topic)
-        return True
+                try:
+                    if DtoP_queue.empty():
+                        time.sleep(0.1)
+                    else:
+                        msg = dict(DtoP_queue.get())
+                        topic = msg.get("topic")
+                        send_data = msg.get("msg", "")
+                        qos = msg.get("qos", 0)
+                        result = self.client.publish(topic, send_data, qos)
+                        if result.rc == mqtt_client.MQTT_ERR_SUCCESS:
+                            if topic != '/hqc/sys/network-state':
+                                HSyslog.log_info(f"Send_to_Device {send_data} to topic: {topic}")
+                        else:
+                            HSyslog.log_info(f"Failed to send device message, result code: {result.rc}")
+                        time.sleep(0.02)
+                except Exception as e:
+                    HSyslog.log_info(f"Send_to_Device: {e}")
 
 
 def analysis_msg_dict(func_dict: dict, msg_dict: dict, topic: str):
@@ -142,76 +187,6 @@ def app_publish(topic: str, msg_body: dict):
         elif msg_body.get("info_id", -1) == 6:
             HHhdlist.device_charfer_p[msg_body.get("gun_id") + 1]["start_package_num"] = msg_dict.get("package_num")
     DtoP_queue.put(msg)
-
-
-def keep_mqtt(broker, port):
-    global thmc
-    thmc = HMqttClient(broker, port)
-    isFirst = True
-    hmclient = None
-    while True:
-        if not thmc.connectStatus:
-            if isFirst:
-                isFirst = False
-                try:
-                    HSyslog.log_info('!!!!! MQTT重连 !!!!!')
-                    hmclient = thmc.connect_mqtt()  # 客户端对象
-                except Exception as e:
-                    HSyslog.log_info(f"{e}")
-                    isFirst = True
-                if thmc.connectStatus and thmc.client:
-                    hmclient.loop_start()
-            else:
-                hmclient.loop_stop()
-                try:
-                    hmclient.reconnect()
-                except Exception as e:
-                    HSyslog.log_info(f"{e}")
-                HSyslog.log_info('will send netstatus')
-                hmclient.loop_start()
-                thmc.subscribe()
-        else:
-            if hmclient._state == 2 or hmclient._state == 0:
-                hmclient.disconnect()
-                thmc.connectStatus = False
-                HSyslog.log_info("The connection is Closed! state is {}".format(hmclient._state))
-
-        time.sleep(1)
-
-
-def do_link_mqtt():
-    mqttKeepThread = threading.Thread(target=keep_mqtt, args=["127.0.0.1", 1883])
-    mqttKeepThread.start()
-    HSyslog.log_info("do_link_mqtt")
-    try:
-        if HHhdlist.device_fault == {}:
-            for i in range(0, HStategrid.gun_num):
-                HHhdlist.device_fault.update({i + 1: {}})
-    except Exception:
-        pass
-
-
-def __mqtt_send_data():
-    while True:
-        if not DtoP_queue:
-            time.sleep(0.1)
-        else:
-            try:
-                if DtoP_queue.empty():
-                    time.sleep(0.1)
-                else:
-                    msg = dict(DtoP_queue.get())
-                    if "topic" not in msg.keys():
-                        continue
-                    thmc.publish(msg.get("topic"), msg.get("msg", ""), msg.get("qos", 0))
-            except Exception as e:
-                raise Exception("program exit")
-
-
-def do_mqtt_send_data():
-    mqttSendThread = threading.Thread(target=__mqtt_send_data)
-    mqttSendThread.start()
-    HSyslog.log_info("do_mqtt_send_data")
 
 
 def __mqtt_period_event():
@@ -604,7 +579,7 @@ def app_charging_control_response(msg_body_dict: dict):
             "tradeNo": HHhdlist.device_charfer_p.get(gunNo).get("tradeNo"),
             "startResult": startResult,
             "faultCode": faultCode,
-            "vinCode": HHhdlist.device_charfer_p.get(gunNo).get("vin")
+            "vinCode": HHhdlist.device_charfer_p.get(gunNo, {}).get("vin", "")
         }
         HTools.Htool_send_startChaResEvt(data)
     if package_num == HHhdlist.device_charfer_p.get(gunNo).get("stop_package_num"):
@@ -903,47 +878,103 @@ def app_charging_record(msg_body_dict: dict):
                     }
                     HTools.Htool_send_stopChaResEvt(data)
 
-                    info = {
-                        "gunNo": gunNo,
-                        "preTradeNo": HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo", ""),
-                        "tradeNo": HHhdlist.device_charfer_p.get(gunNo).get("tradeNo", ""),
-                        "vinCode": HHhdlist.device_charfer_p.get(gunNo).get("order").get("vin", ""),
-                        "timeDivType": timeDivType,
-                        "chargeStartTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_time", ""),
-                        "chargeEndTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_time", ""),
-                        "startSoc": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_soc", ""),
-                        "endSoc": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_soc", ""),
-                        "reason": reason,
-                        "eleModelId": eleModelId,
-                        "serModelId": serModelId,
-                        "sumStart": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_meter_value"),
-                        "sumEnd": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_meter_value"),
-                        "totalElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("total_energy"),
-                        "sharpElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("cusp_energy"),
-                        "peakElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("peak_energy"),
-                        "flatElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("normal_energy"),
-                        "valleyElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("valley_energy"),
-                        "totalPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "total_electric_cost") * 10,
-                        "totalServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "total_service_cost") * 10,
-                        "sharpPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "cusp_electric_cost") * 10,
-                        "peakPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "peak_electric_cost") * 10,
-                        "flatPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "normal_electric_cost") * 10,
-                        "valleyPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "valley_electric_cost") * 10,
-                        "sharpServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "cusp_service_cost") * 10,
-                        "peakServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get("peak_service_cost") * 10,
-                        "flatServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "normal_service_cost") * 10,
-                        "valleyServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
-                            "valley_service_cost") * 10,
-                        "device_session_id": HHhdlist.device_charfer_p.get(gunNo).get("order").get("device_session_id")
-                    }
+                    if HStategrid.fee_model.get("fee_elect") != [] and HStategrid.fee_model.get("fee_ser") != []:
+                        sharpElect = HHhdlist.device_charfer_p.get(gunNo).get("order").get("cusp_energy")
+                        peakElect = HHhdlist.device_charfer_p.get(gunNo).get("order").get("peak_energy")
+                        flatElect = HHhdlist.device_charfer_p.get(gunNo).get("order").get("normal_energy")
+                        valleyElect = HHhdlist.device_charfer_p.get(gunNo).get("order").get("valley_energy")
+
+                        sharpPowerCost = sharpElect * HStategrid.fee_model.get("fee_elect")[0] / 1000
+                        peakPowerCost = peakElect * HStategrid.fee_model.get("fee_elect")[1] / 1000
+                        flatPowerCost = flatElect * HStategrid.fee_model.get("fee_elect")[2] / 1000
+                        valleyPowerCost = valleyElect * HStategrid.fee_model.get("fee_elect")[3] / 1000
+
+                        sharpServCost = sharpElect * HStategrid.fee_model.get("fee_ser")[0] / 1000
+                        peakServCost = peakElect * HStategrid.fee_model.get("fee_ser")[1] / 1000
+                        flatServCost = flatElect * HStategrid.fee_model.get("fee_ser")[2] / 1000
+                        valleyServCost = valleyElect * HStategrid.fee_model.get("fee_ser")[3] / 1000
+
+                        info = {
+                            "gunNo": gunNo,
+                            "preTradeNo": HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo", ""),
+                            "tradeNo": HHhdlist.device_charfer_p.get(gunNo).get("tradeNo", ""),
+                            "vinCode": HHhdlist.device_charfer_p.get(gunNo).get("order").get("vin", ""),
+                            "timeDivType": timeDivType,
+                            "chargeStartTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_time", ""),
+                            "chargeEndTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_time", ""),
+                            "startSoc": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_soc", ""),
+                            "endSoc": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_soc", ""),
+                            "reason": reason,
+                            "eleModelId": eleModelId,
+                            "serModelId": serModelId,
+                            "sumStart": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_meter_value"),
+                            "sumEnd": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_meter_value"),
+                            "totalElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("total_energy"),
+                            "sharpElect": sharpElect,
+                            "peakElect": peakElect,
+                            "flatElect": flatElect,
+                            "valleyElect": valleyElect,
+
+                            "totalPowerCost": sharpPowerCost + peakPowerCost + flatPowerCost + valleyPowerCost,
+                            "totalServCost": sharpServCost + peakServCost + flatServCost + valleyServCost,
+
+                            "sharpPowerCost": sharpPowerCost,
+                            "peakPowerCost": peakPowerCost,
+                            "flatPowerCost": flatPowerCost,
+                            "valleyPowerCost": valleyPowerCost,
+
+                            "sharpServCost": sharpServCost,
+                            "peakServCost": peakServCost,
+                            "flatServCost": flatServCost,
+                            "valleyServCost": valleyServCost,
+
+                            "device_session_id": HHhdlist.device_charfer_p.get(gunNo).get("order").get("device_session_id")
+                        }
+                    else:
+                        info = {
+                            "gunNo": gunNo,
+                            "preTradeNo": HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo", ""),
+                            "tradeNo": HHhdlist.device_charfer_p.get(gunNo).get("tradeNo", ""),
+                            "vinCode": HHhdlist.device_charfer_p.get(gunNo).get("order").get("vin", ""),
+                            "timeDivType": timeDivType,
+                            "chargeStartTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_time", ""),
+                            "chargeEndTime": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_time", ""),
+                            "startSoc": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_soc", ""),
+                            "endSoc": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_soc", ""),
+                            "reason": reason,
+                            "eleModelId": eleModelId,
+                            "serModelId": serModelId,
+                            "sumStart": HHhdlist.device_charfer_p.get(gunNo).get("order").get("start_meter_value"),
+                            "sumEnd": HHhdlist.device_charfer_p.get(gunNo).get("order").get("stop_meter_value"),
+                            "totalElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("total_energy"),
+                            "sharpElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("cusp_energy"),
+                            "peakElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("peak_energy"),
+                            "flatElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("normal_energy"),
+                            "valleyElect": HHhdlist.device_charfer_p.get(gunNo).get("order").get("valley_energy"),
+
+                            "totalPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "total_electric_cost") * 10,
+                            "totalServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "total_service_cost") * 10,
+
+                            "sharpPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "cusp_electric_cost") * 10,
+                            "peakPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "peak_electric_cost") * 10,
+                            "flatPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "normal_electric_cost") * 10,
+                            "valleyPowerCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "valley_electric_cost") * 10,
+
+                            "sharpServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "cusp_service_cost") * 10,
+                            "peakServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get("peak_service_cost") * 10,
+                            "flatServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "normal_service_cost") * 10,
+                            "valleyServCost": HHhdlist.device_charfer_p.get(gunNo).get("order").get(
+                                "valley_service_cost") * 10,
+                            "device_session_id": HHhdlist.device_charfer_p.get(gunNo).get("order").get("device_session_id")
+                        }
                     HTools.Htool_orderUpdateEvt(info)
                     HStategrid.save_DeviceOrder(info)
                     HHhdlist.device_charfer_p.update({gunNo: {}})
@@ -987,38 +1018,91 @@ def app_charging_record(msg_body_dict: dict):
 
             reason = HStategrid.stop_reason(msg_body_dict.get('stop_reason', -1))
 
-            info = {
-                "gunNo": msg_body_dict.get('gun_id', -1) + 1,
-                "preTradeNo": preTradeNo,
-                "tradeNo": tradeNo,
-                "vinCode": msg_body_dict.get('vin', ''),
-                "timeDivType": timeDivType,
-                "chargeStartTime": msg_body_dict.get('start_time', -1),
-                "chargeEndTime": msg_body_dict.get('stop_time', -1),
-                "startSoc": msg_body_dict.get('start_soc', -1),
-                "endSoc": msg_body_dict.get('stop_soc', -1),
-                "reason": reason,
-                "eleModelId": eleModelId,
-                "serModelId": serModelId,
-                "sumStart": msg_body_dict.get('start_meter_value', -1),
-                "sumEnd": msg_body_dict.get('stop_meter_value', -1),
-                "totalElect": msg_body_dict.get('total_energy', -1),
-                "sharpElect": msg_body_dict.get('cusp_energy', -1),
-                "peakElect": msg_body_dict.get('peak_energy', -1),
-                "flatElect": msg_body_dict.get("normal_energy"),
-                "valleyElect": msg_body_dict.get("valley_energy"),
-                "totalPowerCost": msg_body_dict.get("total_electric_cost") * 10,
-                "totalServCost": msg_body_dict.get("total_service_cost") * 10,
-                "sharpPowerCost": msg_body_dict.get("cusp_electric_cost") * 10,
-                "peakPowerCost": msg_body_dict.get("peak_electric_cost") * 10,
-                "flatPowerCost": msg_body_dict.get("normal_electric_cost") * 10,
-                "valleyPowerCost": msg_body_dict.get("valley_electric_cost") * 10,
-                "sharpServCost": msg_body_dict.get("cusp_service_cost") * 10,
-                "peakServCost": msg_body_dict.get("peak_service_cost") * 10,
-                "flatServCost": msg_body_dict.get("normal_service_cost") * 10,
-                "valleyServCost": msg_body_dict.get("valley_service_cost") * 10,
-                "device_session_id": device_session_id
-            }
+            if HStategrid.fee_model.get("fee_elect") != [] and HStategrid.fee_model.get("fee_ser") != []:
+                sharpElect = msg_body_dict.get('cusp_energy', -1)
+                peakElect = msg_body_dict.get('peak_energy', -1)
+                flatElect = msg_body_dict.get("normal_energy")
+                valleyElect = msg_body_dict.get("valley_energy")
+
+                sharpPowerCost = sharpElect * HStategrid.fee_model.get("fee_elect")[0] / 1000
+                peakPowerCost = peakElect * HStategrid.fee_model.get("fee_elect")[1] / 1000
+                flatPowerCost = flatElect * HStategrid.fee_model.get("fee_elect")[2] / 1000
+                valleyPowerCost = valleyElect * HStategrid.fee_model.get("fee_elect")[3] / 1000
+
+                sharpServCost = sharpElect * HStategrid.fee_model.get("fee_ser")[0] / 1000
+                peakServCost = peakElect * HStategrid.fee_model.get("fee_ser")[1] / 1000
+                flatServCost = flatElect * HStategrid.fee_model.get("fee_ser")[2] / 1000
+                valleyServCost = valleyElect * HStategrid.fee_model.get("fee_ser")[3] / 1000
+
+                info = {
+                    "gunNo": gunNo,
+                    "preTradeNo": preTradeNo,
+                    "tradeNo": tradeNo,
+                    "vinCode": msg_body_dict.get('vin', ''),
+                    "timeDivType": timeDivType,
+                    "chargeStartTime": msg_body_dict.get('start_time', -1),
+                    "chargeEndTime": msg_body_dict.get('stop_time', -1),
+                    "startSoc": msg_body_dict.get('start_soc', -1),
+                    "endSoc": msg_body_dict.get('stop_soc', -1),
+                    "reason": reason,
+                    "eleModelId": eleModelId,
+                    "serModelId": serModelId,
+                    "sumStart": msg_body_dict.get('start_meter_value', -1),
+                    "sumEnd": msg_body_dict.get('stop_meter_value', -1),
+                    "totalElect": msg_body_dict.get('total_energy', -1),
+                    "sharpElect": sharpElect,
+                    "peakElect": peakElect,
+                    "flatElect": flatElect,
+                    "valleyElect": valleyElect,
+
+                    "totalPowerCost": sharpPowerCost + peakPowerCost + flatPowerCost + valleyPowerCost,
+                    "totalServCost": sharpServCost + peakServCost + flatServCost + valleyServCost,
+
+                    "sharpPowerCost": sharpPowerCost,
+                    "peakPowerCost": peakPowerCost,
+                    "flatPowerCost": flatPowerCost,
+                    "valleyPowerCost": valleyPowerCost,
+
+                    "sharpServCost": sharpServCost,
+                    "peakServCost": peakServCost,
+                    "flatServCost": flatServCost,
+                    "valleyServCost": valleyServCost,
+
+                    "device_session_id": HHhdlist.device_charfer_p.get(gunNo).get("order").get("device_session_id")
+                }
+            else:
+                info = {
+                    "gunNo": msg_body_dict.get('gun_id', -1) + 1,
+                    "preTradeNo": preTradeNo,
+                    "tradeNo": tradeNo,
+                    "vinCode": msg_body_dict.get('vin', ''),
+                    "timeDivType": timeDivType,
+                    "chargeStartTime": msg_body_dict.get('start_time', -1),
+                    "chargeEndTime": msg_body_dict.get('stop_time', -1),
+                    "startSoc": msg_body_dict.get('start_soc', -1),
+                    "endSoc": msg_body_dict.get('stop_soc', -1),
+                    "reason": reason,
+                    "eleModelId": eleModelId,
+                    "serModelId": serModelId,
+                    "sumStart": msg_body_dict.get('start_meter_value', -1),
+                    "sumEnd": msg_body_dict.get('stop_meter_value', -1),
+                    "totalElect": msg_body_dict.get('total_energy', -1),
+                    "sharpElect": msg_body_dict.get('cusp_energy', -1),
+                    "peakElect": msg_body_dict.get('peak_energy', -1),
+                    "flatElect": msg_body_dict.get("normal_energy"),
+                    "valleyElect": msg_body_dict.get("valley_energy"),
+                    "totalPowerCost": msg_body_dict.get("total_electric_cost") * 10,
+                    "totalServCost": msg_body_dict.get("total_service_cost") * 10,
+                    "sharpPowerCost": msg_body_dict.get("cusp_electric_cost") * 10,
+                    "peakPowerCost": msg_body_dict.get("peak_electric_cost") * 10,
+                    "flatPowerCost": msg_body_dict.get("normal_electric_cost") * 10,
+                    "valleyPowerCost": msg_body_dict.get("valley_electric_cost") * 10,
+                    "sharpServCost": msg_body_dict.get("cusp_service_cost") * 10,
+                    "peakServCost": msg_body_dict.get("peak_service_cost") * 10,
+                    "flatServCost": msg_body_dict.get("normal_service_cost") * 10,
+                    "valleyServCost": msg_body_dict.get("valley_service_cost") * 10,
+                    "device_session_id": device_session_id
+                }
             HTools.Htool_orderUpdateEvt(info)
             HStategrid.save_DeviceOrder(info)
         except Exception as e:
@@ -1034,35 +1118,52 @@ def app_charge_fee(msg_body_dict: dict):
     if HHhdlist.device_charfer_p.get(gunNo) != {}:
         if HHhdlist.device_charfer_p.get(gunNo).get("device_session_id") == msg_body_dict.get("device_session_id"):
             HHhdlist.device_charfer_p[gunNo].update({"charge_time": msg_body_dict.get('charge_time', -1)})
-            HHhdlist.device_charfer_p[gunNo].update({"sharp_kwh": msg_body_dict.get('cusp_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"sharp_electric_charge": msg_body_dict.get('cusp_electric_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"sharp_service_charge": msg_body_dict.get('sharp_service_charge', -1)})
-            HHhdlist.device_charfer_p[gunNo].update({"peak_kwh": msg_body_dict.get('peak_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"peak_electric_charge": msg_body_dict.get('peak_electric_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"sharp_kwh": msg_body_dict.get('cusp_energy', -1)})  ####
+            HHhdlist.device_charfer_p[gunNo].update({"sharp_electric_charge": msg_body_dict.get('cusp_electric_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"sharp_service_charge": msg_body_dict.get('sharp_service_charge', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"peak_kwh": msg_body_dict.get('peak_energy', -1)})  ####
+            HHhdlist.device_charfer_p[gunNo].update({"peak_electric_charge": msg_body_dict.get('peak_electric_cost', -1)})
             HHhdlist.device_charfer_p[gunNo].update({"peak_service_charge": msg_body_dict.get('peak_service_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update({"flat_kwh": msg_body_dict.get('normal_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"flat_electric_charge": msg_body_dict.get('normal_electric_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"flat_service_charge": msg_body_dict.get('normal_service_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update({"valley_kwh": msg_body_dict.get('valley_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"valley_electric_charge": msg_body_dict.get('valley_electric_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"valley_service_charge": msg_body_dict.get('valley_service_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"flat_kwh": msg_body_dict.get('normal_energy', -1)})  ####
+            HHhdlist.device_charfer_p[gunNo].update({"flat_electric_charge": msg_body_dict.get('normal_electric_energy', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"flat_service_charge": msg_body_dict.get('normal_service_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"valley_kwh": msg_body_dict.get('valley_energy', -1)})  ####
+            HHhdlist.device_charfer_p[gunNo].update({"valley_electric_charge": msg_body_dict.get('valley_electric_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"valley_service_charge": msg_body_dict.get('valley_service_cost', -1)})
             HHhdlist.device_charfer_p[gunNo].update({"deep_valley_energy": msg_body_dict.get('deep_valley_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"deep_valley_electric_cost": msg_body_dict.get('deep_valley_electric_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"deep_valley_service_cost": msg_body_dict.get('deep_valley_service_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"deep_valley_electric_cost": msg_body_dict.get('deep_valley_electric_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"deep_valley_service_cost": msg_body_dict.get('deep_valley_service_cost', -1)})
             HHhdlist.device_charfer_p[gunNo].update({"total_kwh": msg_body_dict.get('total_energy', -1)})
-            HHhdlist.device_charfer_p[gunNo].update(
-                {"total_electric_cost": msg_body_dict.get('total_electric_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update({"total_service_cost": msg_body_dict.get('total_service_cost', -1)})
-            HHhdlist.device_charfer_p[gunNo].update({"total_cost": msg_body_dict.get('total_cost', -1)})
+            HHhdlist.device_charfer_p[gunNo].update({"total_electric_cost": msg_body_dict.get('total_electric_cost', -1) * 10})
+            HHhdlist.device_charfer_p[gunNo].update({"total_service_cost": msg_body_dict.get('total_service_cost', -1) * 10})
+            HHhdlist.device_charfer_p[gunNo].update({"total_cost": msg_body_dict.get('total_cost', -1) * 10})
+
+            if HStategrid.fee_model.get("fee_elect") != [] and HStategrid.fee_model.get("fee_ser") != []:
+                sharp_electric_charge = msg_body_dict.get('cusp_energy', -1) * HStategrid.fee_model.get("fee_elect")[0] / 1000
+                sharp_service_charge = msg_body_dict.get('cusp_energy', -1) * HStategrid.fee_model.get("fee_ser")[0] / 1000
+                HHhdlist.device_charfer_p[gunNo].update({"sharp_electric_charge": sharp_electric_charge})
+                HHhdlist.device_charfer_p[gunNo].update({"sharp_service_charge": sharp_service_charge})
+
+                peak_electric_charge = msg_body_dict.get('peak_energy', -1) * HStategrid.fee_model.get("fee_elect")[1] / 1000
+                peak_service_charge = msg_body_dict.get('peak_energy', -1) * HStategrid.fee_model.get("fee_ser")[1] / 1000
+                HHhdlist.device_charfer_p[gunNo].update({"peak_electric_charge": peak_electric_charge})
+                HHhdlist.device_charfer_p[gunNo].update({"peak_service_charge": peak_service_charge})
+
+                flat_electric_charge = msg_body_dict.get('normal_energy', -1) * HStategrid.fee_model.get("fee_elect")[2] / 1000
+                flat_service_charge = msg_body_dict.get('normal_energy', -1) * HStategrid.fee_model.get("fee_ser")[2] / 1000
+                HHhdlist.device_charfer_p[gunNo].update({"flat_electric_charge": flat_electric_charge})
+                HHhdlist.device_charfer_p[gunNo].update({"flat_service_charge": flat_service_charge})
+
+                valley_electric_charge = msg_body_dict.get('valley_energy', -1) * HStategrid.fee_model.get("fee_elect")[3] / 1000
+                valley_service_charge = msg_body_dict.get('valley_energy', -1) * HStategrid.fee_model.get("fee_ser")[3] / 1000
+                HHhdlist.device_charfer_p[gunNo].update({"valley_electric_charge": valley_electric_charge})
+                HHhdlist.device_charfer_p[gunNo].update({"valley_service_charge": valley_service_charge})
+
+                total_electric_cost = sharp_electric_charge + peak_electric_charge + flat_electric_charge + valley_electric_charge
+                total_service_cost = sharp_service_charge + peak_service_charge + flat_service_charge + valley_service_charge
+                HHhdlist.device_charfer_p[gunNo].update({"total_electric_cost": total_electric_cost})
+                HHhdlist.device_charfer_p[gunNo].update({"total_service_cost": total_service_cost})
+                HHhdlist.device_charfer_p[gunNo].update({"total_cost": total_electric_cost + total_service_cost})
 
 
 '''充电电量冻结消息'''
@@ -1588,6 +1689,8 @@ def app_charge_control(msg_body_dict: dict):
                 'gun_id': gunNo - 1,
                 'command_type': 0x01,
                 'start_source': HHhdlist.device_charfer_p.get(gunNo).get("start_source"),
+                'aux_power_type': 0xff,
+                'multi_mode': 0xff,
                 'user_id': HHhdlist.device_charfer_p.get(gunNo).get("user_id"),
                 'appointment_time': 0,
                 'cloud_session_id': HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo"),
@@ -1627,6 +1730,8 @@ def app_charge_control(msg_body_dict: dict):
                     'gun_id': gunNo - 1,
                     'command_type': 0,
                     'start_source': start_source,
+                    'aux_power_type': 0xff,
+                    'multi_mode': 0xff,
                     'user_id': deviceName,
                     'appointment_time': 0,
                     'cloud_session_id': HHhdlist.device_charfer_p.get(gunNo).get("preTradeNo"),
@@ -1919,8 +2024,8 @@ def app_charge_rate_sync_message(msg_body_dict: dict, type=1, count=1):
                 "type": segFlag[timeNum - 1] - 9,
                 "start_time": 0,
                 "stop_time": int(timeSeg[0][0:2]) * 3600 + int(timeSeg[0][2:4]) * 60 - 1,
-                "electric_rate": chargeFee[segFlag[timeNum-1] - 9 - 1] * 100,
-                "service_rate": serviceFee[segFlag[timeNum-1] - 9 - 1] * 100
+                "electric_rate": chargeFee[segFlag[timeNum - 1] - 9 - 1] * 100,
+                "service_rate": serviceFee[segFlag[timeNum - 1] - 9 - 1] * 100
             })
 
         HStategrid.save_DeviceInfo("feeid", 1, eleModelId + serModelId, 0)

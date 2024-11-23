@@ -4,6 +4,7 @@ import inspect
 import os
 import queue
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -40,7 +41,7 @@ current_timestamp = time.time()  # 系统精确时间
 log_queue = queue.Queue()
 
 deviceCode = None  # 出厂编码
-Sign_type = SIGN_TYPE.deviceRegCode.value
+Sign_type = None
 Vendor_Code = 1031  # 厂商代码
 Manufacture_Date = None  # 出厂日期
 device_type = {  # 设备类型
@@ -52,8 +53,11 @@ device_type = {  # 设备类型
 
 data_path = "/opt/hhd/Platform.db"
 syslog_path = '/var/log'  # 替换为实际路径
+back_data_pzth = "/root/back_Platform.db"
 dtu_ota = ""
 heartbeat = 0
+SDKVersion = "A.0.5"
+Platform_type = "GW_SDK"
 
 device_hard = {
     "DTU": 4,
@@ -61,6 +65,11 @@ device_hard = {
     "GCU": 1,
     "PDU": 2,
     "CCU": 3,
+}
+
+fee_model = {
+    "fee_elect": [],
+    "fee_ser": [],
 }
 
 flaut_warning_type = {
@@ -72,7 +81,7 @@ flaut_warning_type = {
             1003: [33],  # 达到设定充电时长停止
             1004: [37],  # 达到设定充电电量停止
             1005: [14, 34],  # 达到设置充电金额停止
-            1006: [12],  # 达到离线停机条件
+            1006: [12, 47],  # 达到离线停机条件
             1007: [6, 35, 36, 57, 228, 229],  # 达到 SOC 终止条件停止
             1008: [20],
             1009: [1],
@@ -92,7 +101,7 @@ flaut_warning_type = {
             3050: [152, 153, 154, 156, 157, 158, 159, 166, 604, 605],
             3051: [94, 606, 607, 412],
             3054: [19, 76, 77, 78, 79],
-            3057: [175, 617],
+            3057: [175, 617, 55],
             3058: [48],
             3059: [],
             3060: [],
@@ -102,7 +111,7 @@ flaut_warning_type = {
             3070: [601, 603, 53, 54, 60, 595, 596, 598, 600, 601, 608, 609],
             3071: [602, 610, 611],
             3072: [168],
-            3082: [55],
+            3082: [],
             4008: [42, 43, 112, 121, 122, 124, 125, 126, 401, 402, 49, 519, 613],
             4009: [131, 132, 133, 403],
             4010: [135, 136, 405],
@@ -117,7 +126,7 @@ flaut_warning_type = {
             4020: [],
             4021: [],
             4022: [],
-            5001: [],
+            5001: [0],
             5002: [187, 188, 189, 190],
             5003: [192, 193, 194, 195, 196],
             5004: [202, 203, 204, 205, 206, 207, 208],
@@ -155,11 +164,11 @@ flaut_warning_type = {
             5037: [],
             5038: [],
             3030: [177, 597],
-            3031: [47],
+            3031: [],
             3032: [16, 72],
             3034: [21, 75, 515, 516, 517, 518],
             3035: [400],
-            3038: [31, 102, 103, 104, 406, 445],
+            3038: [102, 103, 104, 406, 445],
             3039: [172, 410],
             3040: [30, 407, 409, 413],
             3042: [39, 167],
@@ -184,7 +193,7 @@ flaut_warning_type = {
         },
         "warn": {
             3053: [81, 82, 259, 260, 113, 114, 268],
-            3063: [],
+            3063: [31],
             3066: [],
             4017: [123, 509],
             4023: [],
@@ -665,16 +674,18 @@ def get_stop_condition(chargeMode, limitData):
 def get_start_source(startType):
     if startType == 10:
         return 0x01
-    if startType == 11:
+    elif startType == 11:
         return 0x07
-    if startType == 12:
+    elif startType == 12:
         return 0x3F
-    if startType == 13:
+    elif startType == 13:
         return 0x01
-    if startType == 14:
+    elif startType == 14:
         return 0x0A
-    if startType == 15:
+    elif startType == 15:
         return 0x03
+    else:
+        return 0x01
 
 
 def dec_str_to_bcd_compressed(number_str):
@@ -825,6 +836,15 @@ def datadb_init():
     HSyslog.log_info("db_delete")
 
 
+def backup_sqlite_db():
+    conn = sqlite3.connect(data_path)
+    cursor = conn.cursor()
+    shutil.copy(data_path, back_data_pzth)
+    HSyslog.log_info(f"Backup of database '{data_path}' created at '{back_data_pzth}'")
+    conn.commit()
+    conn.close()
+
+
 def save_DeviceInfo(data_id, data_type, data_str, data_int):
     conn = sqlite3.connect(data_path)
     cur = conn.cursor()
@@ -900,11 +920,13 @@ def save_FeeModel(dict_info):
 def get_FeeModel():
     conn = sqlite3.connect(data_path)
     cur = conn.cursor()
-    cur.execute('SELECT * FROM FeeModel')
-    result = cur.fetchone()
+    for i in range(10, 14):
+        cur.execute('SELECT * FROM FeeModel WHERE segFlag = ?', (i,))
+        result = cur.fetchone()
+        fee_model["fee_elect"].append(result[4])
+        fee_model["fee_ser"].append(result[5])
     conn.commit()
     conn.close()
-    return result
 
 
 def save_DeviceOrder(dict_order: dict):

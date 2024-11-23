@@ -12,10 +12,6 @@ from time import sleep
 from HSyslog import *
 from tools import *
 
-cdef str red_char = "\033[91m"
-cdef str green_char = "\033[92m"
-cdef str init_char = "\033[0m"
-
 cdef int onlink_status = 0
 cdef int charger_status = 0
 cdef object set_lock = threading.Lock()
@@ -54,30 +50,24 @@ cdef object callback_mainres = None
 cdef iot_linkkit_new(evs_is_ready, is_device_uid):
     cdef int result = evs_linkkit_new(evs_is_ready, is_device_uid)
     if result == 0:
-        print(green_char + f"The Device Create Successfully" + init_char)
         HSyslog.log_info("The Device Create Successfully")
         return 0
     if result == -1:
-        print(green_char + f"The Device Not Ready" + init_char)
         HSyslog.log_info("The Device Not Ready")
         return -1
     if result == -2:
-        print(green_char + f"Failed To Get Device Registration Code" + init_char)
         HSyslog.log_info("Failed To Get Device Registration Code")
         return -2
     if result == -3:
-        print(green_char + f"Failed To Set Device Certificate" + init_char)
         HSyslog.log_info("Failed To Set Device Certificate")
         return -3
 
 def iot_linkkit_time_sync():
     cdef int result = evs_linkkit_time_sync()
     if result == 0:
-        print(green_char + f"Time Sync Successfully" + init_char)
         HSyslog.log_info("Time Sync Successfully")
         return True
     elif result < 0:
-        print(green_char + f"Time Sync Failed" + init_char)
         HSyslog.log_info("Time Sync Failed")
         return False
 
@@ -86,7 +76,6 @@ def iot_linkkit_fota(buffer, buffer_len):
     try:
         result = evs_linkkit_fota(buffer, buffer_len)
         if result == 0:
-            print(green_char + f"OTA Get Successfully" + init_char)
             HSyslog.log_info("OTA Get Successfully")
             try:
                 if not os.path.exists("/opt/hhd/dtu20.tar.gz"):
@@ -99,47 +88,38 @@ def iot_linkkit_fota(buffer, buffer_len):
                 callback_ota_update("suss")
                 return 0
             except Exception as e:
-                print(green_char + f"OTA Write Failed .{e}" + init_char)
                 HSyslog.log_info(f"OTA Write Failed .{e}")
                 return -1
         elif result < 0:
-            print(green_char + f"OTA Get Failed" + init_char)
             HSyslog.log_info("OTA Get Failed")
             return -1
     except Exception as e:
-        print(green_char + f"iot_linkkit_fota" + init_char)
-        HSyslog.log_info("iot_linkkit_fota")
+        HSyslog.log_info(f"iot_linkkit_fota Failed: {e}")
         return -1
 
 def iot_linkkit_free():
     cdef int result = evs_linkkit_free()
     if result == 0:
-        print(green_char + f"Free Successfully" + init_char)
-        HSyslog.log_info("Free Successfully")
+        HSyslog.log_info("iot_linkkit_free Successfully")
         return True
     elif result < 0:
-        print(red_char + f"Free Failed" + init_char)
-        HSyslog.log_info("Free Failed")
+        HSyslog.log_info("iot_linkkit_free Failed")
+        return False
 
 def iot_mainloop():
     cdef int result = evs_mainloop()
     if result == 0:
-        # print(green_char + f"Device Linkkit Successful" + init_char)
         return 0
     if result == -1:
-        print(red_char + f"Device Linkkit Failed To Open" + init_char)
         HSyslog.log_info("Device Linkkit Failed To Open")
         return -1
     if result == -2:
-        print(red_char + f"Device Linkkit Turn On Retry Wait" + init_char)
         HSyslog.log_info("Device Linkkit Turn On Retry Wait")
         return -2
     if result == -3:
-        print(red_char + f"Device Linkkit Connection Failed" + init_char)
         HSyslog.log_info("Device Linkkit Connection Failed")
         return -3
     if result == -4:
-        print(red_char + f"Device Linkkit Connection Retry Waits" + init_char)
         HSyslog.log_info("Device Linkkit Connection Retry Waits")
         return -4
 
@@ -162,8 +142,7 @@ def set_version(version:str):
         if result == 0:
             HSyslog.log_info(f"ota update version successful: {version}")
     except Exception as e:
-        print(red_char + f"ota update version Failed .{e}" + init_char)
-        HSyslog.log_info("ota update version Failed")
+        HSyslog.log_info(f"ota update version Failed: {e}")
         return -1
 
 def get_otaprogress(progress:int):
@@ -173,81 +152,80 @@ def get_otaprogress(progress:int):
         if result == 1:
             HSyslog.log_info(f"ota update progress : {progress}")
     except Exception as e:
-        print(red_char + f"ota update progress error .{e}" + init_char)
-        HSyslog.log_info("ota update progress error")
+        HSyslog.log_info(f"ota update progress error: {e}")
         return -1
 
 def iot_send_event(event_type: int, event_struct: str):
     try:
         if event_type == 0:
             set_event_fireware_info(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_fireware_info: {event_fireware_info}")
             res = evs_send_event(EVS_CMD_EVENT_FIREWARE_INFO, &event_fireware_info)  # 固件信息上报
+            HSyslog.log_info(f"Send_Event_to_Platform_fireware_info: {event_fireware_info}")
             return res
         if event_type == 1:
             set_event_ask_feeModel(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_ask_feeModel: {event_ask_feeModel}")
             res = evs_send_event(EVS_CMD_EVENT_ASK_FEEMODEL, &event_ask_feeModel)  # 费率请求
+            HSyslog.log_info(f"Send_Event_to_Platform_ask_feeModel: {event_ask_feeModel}")
             return res
         if event_type == 2:
             set_event_startCharge(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_startCharge: {event_startCharge}")
             res = evs_send_event(EVS_CMD_EVENT_STARTCHARGE, &event_startCharge)  # 充电启动鉴权
+            HSyslog.log_info(f"Send_Event_to_Platform_startCharge: {event_startCharge}")
             return res
         if event_type == 3:
             set_event_startResult(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_startResult: {event_startResult}")
             res = evs_send_event(EVS_CMD_EVENT_STARTRESULT, &event_startResult)  # 充电启动结果
+            HSyslog.log_info(f"Send_Event_to_Platform_startResult: {event_startResult}")
             return res
         if event_type == 4:
             set_event_stopCharge(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_stopCharge: {event_stopCharge}")
             res = evs_send_event(EVS_CMD_EVENT_STOPCHARGE, &event_stopCharge)  # 停止充电结果
+            HSyslog.log_info(f"Send_Event_to_Platform_stopCharge: {event_stopCharge}")
             return res
         if event_type == 5:
             set_event_tradeInfo(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_tradeInfo: {event_tradeInfo}")
             res = evs_send_event(EVS_CMD_EVENT_TRADEINFO, &event_tradeInfo)  # 交易记录
+            HSyslog.log_info(f"Send_Event_to_Platform_tradeInfo: {event_tradeInfo}")
             return res
         if event_type == 6:
             set_event_alarm(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_alarm: {event_alarm}")
             res = evs_send_event(EVS_CMD_EVENT_ALARM, &event_alarm)  # 故障告警信息
+            HSyslog.log_info(f"Send_Event_to_Platform_alarm: {event_alarm}")
             return res
         if event_type == 7:
             set_event_pile_stutus_change(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_pile_stutus_change: {event_pile_stutus_change}")
             res = evs_send_event(EVS_CMD_EVENT_ACPILE_CHANGE, &event_pile_stutus_change)  # 枪状态信息(AC)
+            HSyslog.log_info(f"Send_Event_to_Platform_pile_stutus_change: {event_pile_stutus_change}")
             return res
         if event_type == 8:
             set_event_pile_stutus_change(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_pile_stutus_change: {event_pile_stutus_change}")
             res = evs_send_event(EVS_CMD_EVENT_DCPILE_CHANGE, &event_pile_stutus_change)  # 枪状态信息
+            HSyslog.log_info(f"Send_Event_to_Platform_pile_stutus_change: {event_pile_stutus_change}")
             return res
         if event_type == 9:
             set_event_groundLock_change(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_groundLock_change: {event_groundLock_change}")
             res = evs_send_event(EVS_CMD_EVENT_GROUNDLOCK_CHANGE, &event_groundLock_change)  # 地锁状态
+            HSyslog.log_info(f"Send_Event_to_Platform_groundLock_change: {event_groundLock_change}")
             return res
         if event_type == 10:
             set_event_gateLock_change(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_gateLock_change: {event_gateLock_change}")
             res = evs_send_event(EVS_CMD_EVENT_GATELOCK_CHANGE, &event_gateLock_change)  # 门锁状态
+            HSyslog.log_info(f"Send_Event_to_Platform_gateLock_change: {event_gateLock_change}")
             return res
         if event_type == 11:
             set_event_dev_config(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_dev_config: {event_dev_config}")
             res = evs_send_event(EVS_CMD_EVENT_ASK_DEV_CONFIG, &event_dev_config)  # 固件信息
+            HSyslog.log_info(f"Send_Event_to_Platform_dev_config: {event_dev_config}")
             return res
         if event_type == 12:
             set_event_car_info(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_car_info: {event_car_info}")
             res = evs_send_event(EVS_CMD_EVENT_CAR_INFO, &event_car_info)  # 车辆信息(AC)
+            HSyslog.log_info(f"Send_Event_to_Platform_car_info: {event_car_info}")
             return res
         if event_type == 13:
             set_event_ver_info(event_struct)
-            HSyslog.log_info(f"Send_Event_to_Platform_ver_info: {event_ver_info}")
             res = evs_send_event(EVS_CMD_EVENT_VER_INFO, &event_ver_info)  # 版本信息上传
+            HSyslog.log_info(f"Send_Event_to_Platform_ver_info: {event_ver_info}")
             return res
         if event_type == 14:
             set_event_logQuery_Result(event_struct)
@@ -255,9 +233,7 @@ def iot_send_event(event_type: int, event_struct: str):
             return res
 
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"data_input_id: {event_type}, data_input---dict_data: {event_struct}" + init_char)
-        HSyslog.log_info(red_char + f"Send_Event_to_Platform_Failed: {event_struct} ... {e}" + init_char)
+        HSyslog.log_info(f"Send_Event_to_Platform_Failed: {event_struct} ... {e}")
         return -1
 
 def iot_send_property(event_type: int, event_struct: str):
@@ -408,13 +384,11 @@ cdef int callback_service_query_log(evs_service_query_log *param, evs_service_fe
     try: # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_query_log(json_str)
-        if back_data == "":
-            print(red_char + f"callback_query_log error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_query_log error")
             return -1
         try:
             if set_service_feedback_query_log(back_data) == -1:
-                print(red_char + f"set_service_feedback_query_log error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_query_log error")
                 return -1
             result.gunNo = service_feedback_query_log.gunNo  # 1	枪号
@@ -426,13 +400,9 @@ cdef int callback_service_query_log(evs_service_query_log *param, evs_service_fe
 
             HSyslog.log_info(f"Reply_to_Platform service_query_log: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_query_log: {back_data}" + init_char)
-            HSyslog.log_info(f"set_service_feedback_query_log: {back_data}. {e}")
+            HSyslog.log_info(f"set_service_feedback_query_log error: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_query_log: {json_str}" + init_char)
         HSyslog.log_info(f"callback_query_log: {json_str}. {e}")
         return -1
 
@@ -451,13 +421,11 @@ cdef int callback_service_dev_maintain(evs_service_dev_maintain *param, evs_serv
     try: # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_dev_maintain(json_str)
-        if back_data == "":
-            print(red_char + f"callback_dev_maintain error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_dev_maintain error")
             return -1
         try:
             if set_service_feedback_dev_maintain(back_data) == -1:
-                print(red_char + f"set_service_feedback_dev_maintain error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_dev_maintain error")
                 return -1
             result.ctrlType = service_feedback_dev_maintain.ctrlType  # 1	当前控制类型
@@ -465,13 +433,9 @@ cdef int callback_service_dev_maintain(evs_service_dev_maintain *param, evs_serv
 
             HSyslog.log_info(f"Reply_to_Platform service_dev_maintain: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_dev_maintain: {back_data}" + init_char)
-            HSyslog.log_info(f"set_service_feedback_dev_maintain: {back_data}. {e}")
+            HSyslog.log_info(f"set_service_feedback_dev_maintain error: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_dev_maintain: {json_str}" + init_char)
         HSyslog.log_info(f"callback_dev_maintain: {json_str}. {e}")
         return -1
 
@@ -491,13 +455,11 @@ cdef int callback_service_lockCtrl(evs_service_lockCtrl *param, evs_service_feed
     try: # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_lockCtrl(json_str)
-        if back_data == "":
-            print(red_char + f"callback_lockCtrl error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_lockCtrl error")
             return -1
         try:
             if set_service_feedback_lockCtrl(back_data) == -1:
-                print(red_char + f"set_service_feedback_lockCtrl error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_lockCtrl error")
                 return -1
             result.gunNo = service_feedback_lockCtrl.gunNo  # 1	充电枪编号
@@ -506,13 +468,9 @@ cdef int callback_service_lockCtrl(evs_service_lockCtrl *param, evs_service_feed
 
             HSyslog.log_info(f"Reply_to_Platform service_lockCtrl: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_lockCtrl: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_lockCtrl: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_lockCtrl: {json_str}" + init_char)
         HSyslog.log_info(f"callback_lockCtrl: {json_str}. {e}")
         return -1
 
@@ -540,13 +498,11 @@ cdef int callback_service_issue_feeModel(evs_service_issue_feeModel *param, evs_
     try: # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_issue_feeModel(json_str)
-        if back_data == "":
-            print(red_char + f"callback_issue_feeModel error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_issue_feeModel error")
             return -1
         try:
             if set_service_feedback_feeModel(back_data) == -1:
-                print(red_char + f"set_service_feedback_feeModel error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_feeModel error")
                 return -1
             result.eleModelId = service_feedback_feeModel.eleModelId  # 1		电费计费模型编号
@@ -555,13 +511,9 @@ cdef int callback_service_issue_feeModel(evs_service_issue_feeModel *param, evs_
 
             HSyslog.log_info(f"Reply_to_Platform service_issue_feeModel: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_feeModel: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_feeModel: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"data_input_data: {json_str}" + init_char)
         HSyslog.log_info(f"callback_issue_feeModel: {json_str}. {e}")
         return -1
 
@@ -588,13 +540,11 @@ cdef int callback_service_startCharge(evs_service_startCharge *param, evs_servic
     try: # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_startCharge(json_str)
-        if back_data == "":
-            print(red_char + f"callback_startCharge error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_startCharge error")
             return -1
         try:
             if set_service_feedback_startCharge(back_data) == -1:
-                print(red_char + f"set_service_feedback_startCharge error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_startCharge error")
                 return -1
             result.gunNo = service_feedback_startCharge.gunNo  # 1 充电枪编号
@@ -603,13 +553,9 @@ cdef int callback_service_startCharge(evs_service_startCharge *param, evs_servic
 
             HSyslog.log_info(f"Reply_to_Platform service_startCharge: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_startCharge: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_startCharge: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_startCharge: {json_str}" + init_char)
         HSyslog.log_info(f"callback_startCharge: {json_str}. {e}")
         return -1
 
@@ -638,13 +584,11 @@ cdef int callback_service_authCharge(evs_service_authCharge *param, evs_service_
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_authCharge(json_str)
-        if back_data == "":
-            print(red_char + f"callback_authCharge error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info("callback_authCharge error")
             return -1
         try:
             if set_service_feedback_authCharge(back_data) == -1:
-                print(red_char + f"set_service_feedback_authCharge error" + init_char)
                 HSyslog.log_info("set_service_feedback_authCharge error")
                 return -1
             result.gunNo = service_feedback_authCharge.gunNo  # 1	充电枪编号
@@ -653,13 +597,9 @@ cdef int callback_service_authCharge(evs_service_authCharge *param, evs_service_
 
             HSyslog.log_info(f"Reply_to_Platform service_authCharge: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_authCharge: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_authCharge: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"data_input_data: {json_str}" + init_char)
         HSyslog.log_info(f"callback_authCharge: {json_str}. {e}")
         return -1
 
@@ -681,13 +621,11 @@ cdef int callback_service_stopCharge(evs_service_stopCharge *param, evs_service_
     try: # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_stopCharge(json_str)
-        if back_data == "":
-            print(red_char + f"callback_stopCharge error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info("callback_stopCharge error")
             return -1
         try:
             if set_service_feedback_stopCharge(back_data) == -1:
-                print(red_char + f"set_service_feedback_stopCharge error" + init_char)
                 HSyslog.log_info("set_service_feedback_stopCharge error")
                 return -1
             result.gunNo = service_feedback_stopCharge.gunNo  # 1	充电枪编号
@@ -696,13 +634,9 @@ cdef int callback_service_stopCharge(evs_service_stopCharge *param, evs_service_
 
             HSyslog.log_info(f"Reply_to_Platform service_stopCharge: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_stopCharge: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_stopCharge: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_stopCharge: {json_str}" + init_char)
         HSyslog.log_info(f"callback_stopCharge: {json_str}. {e}")
         return -1
 
@@ -723,13 +657,11 @@ cdef int callback_service_rsvCharge(evs_service_rsvCharge *param, evs_service_fe
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_rsvCharge(json_str)
-        if back_data == "":
-            print(red_char + f"callback_rsvCharge error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_rsvCharge error")
             return -1
         try:
             if set_service_feedback_rsvCharge(back_data) == -1:
-                print(red_char + f"set_service_feedback_rsvCharge error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_rsvCharge error")
                 return -1
             result.gunNo = service_feedback_rsvCharge.gunNo  # 1	充电枪编号
@@ -739,13 +671,9 @@ cdef int callback_service_rsvCharge(evs_service_rsvCharge *param, evs_service_fe
 
             HSyslog.log_info(f"Reply_to_Platform service_rsvCharge: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_rsvCharge: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_rsvCharge: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_rsvCharge: {json_str}" + init_char)
         HSyslog.log_info(f"callback_rsvCharge: {json_str}. {e}")
         return -1
 
@@ -769,8 +697,6 @@ cdef int callback_service_confirmTrade(evs_service_confirmTrade *param, void *re
         callback_confirmTrade(json_str)
         return 0
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"data_input_data: {json_str}" + init_char)
         HSyslog.log_info(f"callback_confirmTrade: {json_str}. {e}")
         return -1
 
@@ -787,13 +713,11 @@ cdef int callback_service_groundLock_ctrl(evs_service_groundLock_ctrl *param,
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_groundLock_ctrl(json_str)
-        if back_data == "":
-            print(red_char + f"callback_groundLock_ctrl error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_groundLock_ctrl error")
             return -1
         try:
             if set_service_feedback_groundLock_ctrl(back_data) == -1:
-                print(red_char + f"set_service_feedback_groundLock_ctrl error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_groundLock_ctrl error")
                 return -1
             result.gunNo = service_feedback_groundLock_ctrl.gunNo  # 1	充电枪编号
@@ -802,13 +726,9 @@ cdef int callback_service_groundLock_ctrl(evs_service_groundLock_ctrl *param,
 
             HSyslog.log_info(f"Reply_to_Platform service_groundLock_ctrl: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_groundLock_ctrl: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_groundLock_ctrl: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_groundLock_ctrl: {json_str}" + init_char)
         HSyslog.log_info(f"callback_groundLock_ctrl: {json_str}. {e}")
         return -1
 
@@ -828,13 +748,11 @@ cdef int callback_service_gateLock_ctrl(evs_service_gateLock_ctrl *param, evs_se
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_gateLock_ctrl(json_str)
-        if back_data == "":
-            print(red_char + f"callback_gateLock_ctrl error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_gateLock_ctrl error")
             return -1
         try:
             if set_service_feedback_gateLock_ctrl(back_data) == -1:
-                print(red_char + f"set_service_feedback_gateLock_ctrl error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_gateLock_ctrl error")
                 return -1
             result.lockNo = service_feedback_gateLock_ctrl.lockNo  # 1	充电枪编号
@@ -842,13 +760,9 @@ cdef int callback_service_gateLock_ctrl(evs_service_gateLock_ctrl *param, evs_se
 
             HSyslog.log_info(f"Reply_to_Platform service_gateLock_ctrl: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_gateLock_ctrl: {back_data}" + init_char)
             HSyslog.log_info(f"mset_service_feedback_gateLock_ctrl: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_gateLock_ctrl: {json_str}" + init_char)
         HSyslog.log_info(f"callback_gateLock_ctrl: {json_str}. {e}")
         return -1
 
@@ -873,13 +787,11 @@ cdef int callback_service_orderCharge(evs_service_orderCharge *param, evs_servic
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_orderCharge(json_str)
-        if back_data == "":
-            print(red_char + f"callback_orderCharge error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info("callback_orderCharge error")
             return -1
         try:
             if set_service_feedback_orderCharge(back_data) == -1:
-                print(red_char + f"set_service_feedback_orderCharge error" + init_char)
                 HSyslog.log_info("set_service_feedback_orderCharge error")
                 return -1
             result.preTradeNo = service_feedback_orderCharge.preTradeNo  # 1	订单流水号
@@ -888,13 +800,9 @@ cdef int callback_service_orderCharge(evs_service_orderCharge *param, evs_servic
 
             HSyslog.log_info(f"Reply_to_Platform service_orderCharge: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_orderCharge: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_orderCharge: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_orderCharge: {json_str}" + init_char)
         HSyslog.log_info(f"callback_orderCharge: {json_str}. {e}")
         return -1
 
@@ -912,14 +820,11 @@ cdef int callback_service_get_config(evs_data_dev_config *result):
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_get_config(json_str)
         if back_data == -1:
-            print(red_char + f"callback_update_config error" + init_char)
             HSyslog.log_info(f"callback_update_config error")
             return -1
         HSyslog.log_info(f"Received_from_Platform service_get_config: {json_str}")
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(f"service_get_config: {post_data}")
-        HSyslog.log_info(f"service_get_config: {post_data}")
+        HSyslog.log_info(f"service_get_config: {post_data}: {e}")
         return -1
 
     try:
@@ -939,9 +844,7 @@ cdef int callback_service_get_config(evs_data_dev_config *result):
             result.qrCode[i] = str_to_char(dict_info.get("qrCode")[i])  # 11	二维码数据
         HSyslog.log_info(f"Reply_to_Platform service_get_config: {data_dev_config}")
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(f"service_get_config: {back_data}")
-        HSyslog.log_info(f"service_get_config: {back_data}")
+        HSyslog.log_info(f"service_get_config: {back_data} {e}")
         return -1
 
     return 0
@@ -968,13 +871,10 @@ cdef int callback_service_update_config(evs_data_dev_config *param, int *result)
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_update_config(json_str)
         if back_data == -1:
-            print(red_char + f"callback_update_config error" + init_char)
             HSyslog.log_info(f"callback_update_config error")
             return -1
         result[0] = back_data
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_update_config: {json_str}" + init_char)
         HSyslog.log_info(f"callback_update_config: {json_str}. {e}")
         return -1
 
@@ -989,12 +889,11 @@ cdef int callback_service_ota_update(const char *version):
     try:
         back_data = callback_ota_update(new_version)
         if back_data[0] == -4:
-            print("ota update failed")
+            HSyslog.log_info("ota update failed")
             return -1
         else:
             return iot_linkkit_fota(back_data[0], back_data[1])
     except Exception as e:
-        print(red_char + f"callback_ota_update" + init_char)
         HSyslog.log_info(f"callback_ota_update. {e}")
 
 
@@ -1003,17 +902,13 @@ cdef int callback_service_time_sync(const uint32_t timestamp):
     palform_time = timestamp_to_datetime(timestamp)
     if palform_time is "":
         return -1
-    # iot_linkkit_time_sync()
     HSyslog.log_info(f"Received_from_Platform service_time_sync: {palform_time}")
     try:  # 传到设备并接收
         back_data = callback_time_sync(palform_time)
-        if back_data == "":
-            print(red_char + f"callback_time_sync error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"Reply_to_Platform service_time_sync: {back_data}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_time_sync: {palform_time}" + init_char)
         HSyslog.log_info(f"callback_time_sync: {back_data}. {e}")
         return -1
     return 0
@@ -1033,11 +928,10 @@ cdef int callback_service_state_ever(int ev, const char *msg):
                 callback_state_ever(json_str)
             return 0
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"data_input_data: {json_str}" + init_char)
+            HSyslog.log_info(f"Reply_to_Platform callback_state_ever: {json_str} {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
+        HSyslog.log_info(f"Reply_to_Platform callback_service_state_ever: {json_str} {e}")
         return -1
 
 
@@ -1057,18 +951,15 @@ cdef int callback_service_connectSucc():
         try:  # 传到设备并接收
             back_data = callback_connectSucc(json_str)
             if back_data == -1:
-                print(red_char + f"callback_connectSucc error" + init_char)
                 HSyslog.log_info(f"Reply_to_Platform service_connectSucc: {back_data}")
                 return -1
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"data_input_data: {json_str}" + init_char)
+            HSyslog.log_info(f"Reply_to_Platform callback_connectSucc: {json_str} {e}")
             return -1
-        print(f"MQTT Connect Success: {onlink_status}")
-        # send_property.start_all_sendproperty()
+        HSyslog.log_info(f"MQTT Connect Success: {onlink_status}")
         return 0
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
+        HSyslog.log_info(f"Reply_to_Platform callback_service_connectSucc: {e}")
         return -1
 
 #[EVS_DISCONNECTED]
@@ -1085,17 +976,15 @@ cdef int callback_service_disConnected():
         try:  # 传到设备并接收
             back_data = callback_disConnected(json_str)
             if back_data == -1:
-                print(red_char + f"callback_disConnected error" + init_char)
                 HSyslog.log_info(f"Reply_to_Platform service_disConnected: {back_data}")
                 return -1
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"data_input_data: {json_str}" + init_char)
+            HSyslog.log_info(f"Reply_to_Platform callback_disConnected: {back_data} {e}")
             return -1
         HSyslog.log_info(f"MQTT DisConnected: {onlink_status}")
         return 0
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
+        HSyslog.log_info(f"Reply_to_Platform callback_disConnected: {e}")
         return -1
 
 #[EVS_REPORT_REPLY]
@@ -1104,10 +993,6 @@ cdef int callback_service_reportReply(  #const int devid,
         const int code,
         const char *reply,
         const int reply_len):
-    # print(green_char)
-    # print(
-    #     f"Property Message Post Reply Received, Message ID: {msgid}, Message Code: {code}, Message Reply: {char_to_str(reply)}")
-    # print(init_char)
     # HSyslog.log_info(f"Property Message Post Reply Received, Message ID: {msgid}, Message Code: {code}, Message Reply: {char_to_str(reply)}")
     return 0
 
@@ -1119,11 +1004,6 @@ cdef int callback_service_trigEvevtReply(  #const int devid,
         const int eventid_len,
         const char *message,
         const int message_len):
-
-    # print(green_char)
-    # print(
-    #     f"Event Post Reply Received, Message ID: {msgid}, Message Code: {code}, EventID: {char_to_str(eventid)}, Message: {char_to_str(message)}")
-    # print(init_char)
     # HSyslog.log_info(f"Event Post Reply Received, Message ID: {msgid}, Message Code: {code}, EventID: {char_to_str(eventid)}, Message: {char_to_str(message)}")
     post_data = {
         "info_id": EVS_TRIGGER_EVENT_REPLY,
@@ -1134,17 +1014,15 @@ cdef int callback_service_trigEvevtReply(  #const int devid,
     }
     try:
         json_str = json.dumps(post_data)  # 改为json格式
-        # print("received state event -- ", "-0x{:04X}".format(ev), char_to_str(msg))
         try:  # 传到设备并接收
             if callback_trigEvevtReply is not None:
                 callback_trigEvevtReply(json_str)
             return 0
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"data_input_data: {json_str}" + init_char)
+            HSyslog.log_info(f"Reply_to_Platform callback_trigEvevtReply: {json_str} {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
+        HSyslog.log_info(f"Reply_to_Platform callback_service_trigEvevtReply: {e}")
         return -1
 
 #[EVS_CERT_GET]
@@ -1176,9 +1054,13 @@ cdef int callback_service_certGet(evs_device_meta *meta):
         meta.device_secret = str_to_char(device_secret)  #某台设备的设备密钥
         meta.device_reg_code = device_meta.device_reg_code  #某台设备的设备注册码
         meta.device_uid = device_meta.device_uid
+        
+        HSyslog.log_info(f"productKey: {productKey}")
+        HSyslog.log_info(f"deviceName: {deviceName}")
+        HSyslog.log_info(f"deviceSecret: {deviceSecret}")
         return 0
     except Exception as e:
-        print(f"callback_service_certGet: {e}")
+        HSyslog.log_info(f"callback_service_certGet: {e}")
 
 
 #[EVS_CERT_SET]
@@ -1187,8 +1069,12 @@ cdef int callback_service_certSet(evs_device_meta meta):
         product_key = remove_escape_characters(meta.product_key)
         device_name = remove_escape_characters(meta.device_name)
         device_secret = remove_escape_characters(meta.device_secret)
+
+        HSyslog.log_info(f"productKey: {productKey}")
+        HSyslog.log_info(f"deviceName: {deviceName}")
+        HSyslog.log_info(f"deviceSecret: {deviceSecret}")
     except Exception as e:
-        print(f"callback_service_certSet: {e}")
+        HSyslog.log_info(f"callback_service_certSet: {e}")
 
     try:
         save_DeviceInfo("Vendor_Code", 1, "1031", 0)
@@ -1197,19 +1083,25 @@ cdef int callback_service_certSet(evs_device_meta meta):
         save_DeviceInfo("deviceName", 1, char_to_str(device_name), 0)
         save_DeviceInfo("deviceSecret", 1, char_to_str(device_secret), 0)
     except Exception as e:
-        print(f"save_DeviceInfo: {e}")
+        HSyslog.log_info(f"save_DeviceInfo: {e}")
 
 #[EVS_DEVICE_REG_CODE_GET]
 cdef int callback_service_deregCodeGet(char *device_reg_code):
-    for i in range(0, len(char_to_str(device_meta.device_reg_code)) + 1):
-        device_reg_code[i] = device_meta.device_reg_code[i]
-    return len(char_to_str(device_meta.device_reg_code))
+    try:
+        for i in range(0, len(char_to_str(device_meta.device_reg_code)) + 1):
+            device_reg_code[i] = device_meta.device_reg_code[i]
+        return len(char_to_str(device_meta.device_reg_code))
+    except Exception as e:
+        HSyslog.log_info(f"callback_service_deregCodeGet: {e}")
 
 # [EVS_DEVICE_UID_GET]
 cdef int callback_service_uidGet(char *device_uid):
-    for i in range(0, len(char_to_str(device_meta.device_uid)) + 1):
-        device_uid[i] = device_meta.device_uid[i]
-    return len(char_to_str(device_meta.device_uid))
+    try:
+        for i in range(0, len(char_to_str(device_meta.device_uid)) + 1):
+            device_uid[i] = device_meta.device_uid[i]
+        return len(char_to_str(device_meta.device_uid))
+    except Exception as e:
+        HSyslog.log_info(f"callback_service_uidGet: {e}")
 
 
 # [EVS_MAINTAIN_RESULT_SRV]
@@ -1221,13 +1113,11 @@ cdef int callback_service_mainres(evs_service_feedback_maintain_query *result):
     try:  # 传到设备并接收
         json_str = json.dumps(post_data)  # 改为json格式
         back_data = callback_mainres(json_str)
-        if back_data == "":
-            print(red_char + f"callback_mainres error" + init_char)
+        if back_data == "" or back_data is None:
             HSyslog.log_info(f"callback_mainres error")
             return -1
         try:
             if set_service_feedback_maintain_query(back_data) == -1:
-                print(red_char + f"set_service_feedback_maintain_query error" + init_char)
                 HSyslog.log_info(f"set_service_feedback_maintain_query error")
                 return -1
             result.ctrlType = service_feedback_maintain_query.ctrlType
@@ -1235,13 +1125,9 @@ cdef int callback_service_mainres(evs_service_feedback_maintain_query *result):
 
             HSyslog.log_info(f"Reply_to_Platform service_mainres: {back_data}")
         except Exception as e:
-            print(red_char + f"{e}" + init_char)
-            print(red_char + f"set_service_feedback_maintain_query: {back_data}" + init_char)
             HSyslog.log_info(f"set_service_feedback_maintain_query: {back_data}. {e}")
             return -1
     except Exception as e:
-        print(red_char + f"{e}" + init_char)
-        print(red_char + f"callback_mainres: {json_str}" + init_char)
         HSyslog.log_info(f"callback_mainres: {json_str}. {e}")
         return -1
 
@@ -1261,10 +1147,7 @@ def set_device_meta(json_str):
         device_meta.device_uid = str_to_char(info_dict.get("device_uid", ""))
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_device_meta---json_data: {json_str}. {e}")
         return -1
 
 def set_event_fireware_info(json_str: str):
@@ -1298,13 +1181,9 @@ def set_event_fireware_info(json_str: str):
         event_fireware_info.isGateLock = info_dict.get("isGateLock", 0)
         event_fireware_info.isGroundLock = info_dict.get("isGroundLock", 0)
 
-        # print(f"event_fireware_info: {event_fireware_info}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_fireware_info---json_data: {json_str}. {e}")
         return -1
 
 def set_event_ver_info(json_str):
@@ -1314,13 +1193,9 @@ def set_event_ver_info(json_str):
         event_ver_info.pileSoftwareVer = str_to_char(info_dict.get("pileSoftwareVer", ""))
         event_ver_info.pileHardwareVer = str_to_char(info_dict.get("pileHardwareVer", ""))
         event_ver_info.sdkVer = str_to_char(info_dict.get("sdkVer", ""))
-        # print(f"event_ver_info: {event_ver_info}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_ver_info---json_data: {json_str}. {e}")
         return -1
 
 def set_data_dev_config(json_str):
@@ -1338,13 +1213,9 @@ def set_data_dev_config(json_str):
         data_dev_config.encodeCon = info_dict.get("encodeCon", 0)
         for i in range(0, len(info_dict.get("qrCode", ""))):
             data_dev_config.qrCode[i] = str_to_char(info_dict.get("qrCode", "")[i])
-        # print(f"data_dev_config: {data_dev_config}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_data_dev_config---json_data: {json_str}. {e}")
         return -1
 
 def set_service_query_log(json_str):
@@ -1355,13 +1226,9 @@ def set_service_query_log(json_str):
         service_query_log.stopDate = info_dict.get("stopDate")
         service_query_log.askType = info_dict.get("askType")
         service_query_log.logQueryNo = str_to_char(info_dict.get("logQueryNo"))
-        # print(f"service_query_log: {service_query_log}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_query_log---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_query_log(json_str):
@@ -1373,26 +1240,18 @@ def set_service_feedback_query_log(json_str):
         service_feedback_query_log.askType = info_dict.get("askType")
         service_feedback_query_log.result = info_dict.get("result")
         service_feedback_query_log.logQueryNo = str_to_char(info_dict.get("logQueryNo"))
-        # print(f"service_feedback_query_log: {service_feedback_query_log}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_query_log---json_data: {json_str}. {e}")
         return -1
 
 def set_service_dev_maintain(json_str):
     try:
         info_dict = json.loads(json_str)
         service_dev_maintain.ctrlType = info_dict.get("ctrlType")
-        # print(f"service_dev_maintain: {service_dev_maintain}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_dev_maintain---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_dev_maintain(json_str):
@@ -1400,13 +1259,9 @@ def set_service_feedback_dev_maintain(json_str):
         info_dict = json.loads(json_str)
         service_feedback_dev_maintain.ctrlType = info_dict.get("ctrlType")
         service_feedback_dev_maintain.reason = info_dict.get("reason")
-        # print(f"service_feedback_dev_maintain: {service_feedback_dev_maintain}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_dev_maintain---json_data: {json_str}. {e}")
         return -1
 
 def set_service_lockCtrl(json_str):
@@ -1414,13 +1269,9 @@ def set_service_lockCtrl(json_str):
         info_dict = json.loads(json_str)
         service_lockCtrl.gunNo = info_dict.get("gunNo")
         service_lockCtrl.lockParam = info_dict.get("lockParam")
-        # print(f"service_lockCtrl: {service_lockCtrl}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_lockCtrl---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_lockCtrl(json_str):
@@ -1429,13 +1280,9 @@ def set_service_feedback_lockCtrl(json_str):
         service_feedback_lockCtrl.gunNo = info_dict.get("gunNo")
         service_feedback_lockCtrl.lockStatus = info_dict.get("lockStatus")
         service_feedback_lockCtrl.resCode = info_dict.get("resCode")
-        # print(f"service_feedback_lockCtrl: {service_feedback_lockCtrl}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_lockCtrl---json_data: {json_str}. {e}")
         return -1
 
 def set_service_issue_feeModel(json_str):
@@ -1449,13 +1296,9 @@ def set_service_issue_feeModel(json_str):
         service_issue_feeModel.serviceFee = info_dict.get("serviceFee")
         for i in range(0, info_dict.get("TimeNum")):
             service_issue_feeModel.TimeSeg[i] = str_to_char(info_dict.get("TimeSeg")[i])
-        # print(f"service_issue_feeModel: {service_issue_feeModel}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_issue_feeModel---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_feeModel(json_str):
@@ -1464,13 +1307,9 @@ def set_service_feedback_feeModel(json_str):
         service_feedback_feeModel.eleModelId = str_to_char(info_dict.get("eleModelId"))
         service_feedback_feeModel.serModelId = str_to_char(info_dict.get("serModelId"))
         service_feedback_feeModel.result = info_dict.get("result")
-        # print(f"service_feedback_feeModel: {service_feedback_feeModel}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_feeModel---json_data: {json_str}. {e}")
         return -1
 
 def set_service_startCharge(json_str):
@@ -1485,13 +1324,9 @@ def set_service_startCharge(json_str):
         service_startCharge.stopCode = info_dict.get("stopCode")
         service_startCharge.startMode = info_dict.get("startMode")
         service_startCharge.insertGunTime = info_dict.get("insertGunTime")
-        # print(f"service_startCharge: {service_startCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_startCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_startCharge(json_str):
@@ -1500,13 +1335,9 @@ def set_service_feedback_startCharge(json_str):
         service_feedback_startCharge.gunNo = info_dict.get("gunNo")
         service_feedback_startCharge.preTradeNo = str_to_char(info_dict.get("preTradeNo"))
         service_feedback_startCharge.tradeNo = str_to_char(info_dict.get("tradeNo"))
-        # print(f"service_feedback_startCharge: {service_feedback_startCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_startCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_event_startResult(json_str):
@@ -1518,13 +1349,9 @@ def set_event_startResult(json_str):
         event_startResult.startResult = info_dict.get("startResult")
         event_startResult.faultCode = info_dict.get("faultCode")
         event_startResult.vinCode = str_to_char(info_dict.get("vinCode"))
-        # print(f"event_startResult: {event_startResult}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_startResult---json_data: {json_str}. {e}")
         return -1
 
 def set_event_startCharge(json_str):
@@ -1539,13 +1366,9 @@ def set_event_startCharge(json_str):
         event_startCharge.batteryCap = info_dict.get("batteryCap")
         event_startCharge.chargeTimes = info_dict.get("chargeTimes")
         event_startCharge.batteryVol = info_dict.get("batteryVol")
-        # print(f"event_startCharge: {event_startCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_startCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_authCharge(json_str):
@@ -1562,13 +1385,9 @@ def set_service_authCharge(json_str):
         service_authCharge.stopCode = info_dict.get("stopCode")
         service_authCharge.startMode = info_dict.get("startMode")
         service_authCharge.insertGunTime = info_dict.get("insertGunTime")
-        # print(f"service_authCharge: {service_authCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_authCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_authCharge(json_str):
@@ -1577,13 +1396,9 @@ def set_service_feedback_authCharge(json_str):
         service_feedback_authCharge.gunNo = info_dict.get("gunNo")
         service_feedback_authCharge.preTradeNo = str_to_char(info_dict.get("preTradeNo"))
         service_feedback_authCharge.tradeNo = str_to_char(info_dict.get("tradeNo"))
-        # print(f"service_feedback_authCharge: {service_feedback_authCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_authCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_stopCharge(json_str):
@@ -1593,13 +1408,9 @@ def set_service_stopCharge(json_str):
         service_stopCharge.preTradeNo = str_to_char(info_dict.get("preTradeNo"))
         service_stopCharge.tradeNo = str_to_char(info_dict.get("tradeNo"))
         service_stopCharge.stopReason = info_dict.get("stopReason")
-        # print(f"service_stopCharge: {service_stopCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_stopCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_stopCharge(json_str):
@@ -1608,13 +1419,9 @@ def set_service_feedback_stopCharge(json_str):
         service_feedback_stopCharge.gunNo = info_dict.get("gunNo")
         service_feedback_stopCharge.preTradeNo = str_to_char(info_dict.get("preTradeNo"))
         service_feedback_stopCharge.tradeNo = str_to_char(info_dict.get("tradeNo"))
-        # print(f"service_feedback_stopCharge: {service_feedback_stopCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_stopCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_event_stopCharge(json_str):
@@ -1626,13 +1433,9 @@ def set_event_stopCharge(json_str):
         event_stopCharge.stopResult = info_dict.get("stopResult")
         event_stopCharge.resultCode = info_dict.get("resultCode")
         event_stopCharge.stopFailReson = info_dict.get("stopFailReson")
-        # print(f"event_stopCharge: {event_stopCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_stopCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_event_tradeInfo(json_str):
@@ -1667,13 +1470,9 @@ def set_event_tradeInfo(json_str):
         event_tradeInfo.peakServCost = info_dict.get("peakServCost")
         event_tradeInfo.flatServCost = info_dict.get("flatServCost")
         event_tradeInfo.valleyServCost = info_dict.get("valleyServCost")
-        # print(f"event_tradeInfo: {event_tradeInfo}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_tradeInfo---json_data: {json_str}. {e}")
         return -1
 
 def set_service_confirmTrade(json_str):
@@ -1683,13 +1482,9 @@ def set_service_confirmTrade(json_str):
         service_confirmTrade.preTradeNo = str_to_char(info_dict.get("preTradeNo"))
         service_confirmTrade.tradeNo = str_to_char(info_dict.get("tradeNo"))
         service_confirmTrade.errcode = info_dict.get("errcode")
-        # print(f"service_confirmTrade: {service_confirmTrade}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_confirmTrade---json_data: {json_str}. {e}")
         return -1
 
 def set_event_alarm(json_str):
@@ -1706,13 +1501,9 @@ def set_event_alarm(json_str):
             event_alarm.faultValue[i] = info_dict.get("faultValue")[i]
         for i in range(0, event_alarm.warnSum):
             event_alarm.warnValue[i] = info_dict.get("warnValue")[i]
-        # print(f"event_alarm: {event_alarm}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_alarm---json_data: {json_str}. {e}")
         return -1
 
 def set_service_rsvCharge(json_str):
@@ -1721,13 +1512,9 @@ def set_service_rsvCharge(json_str):
         service_rsvCharge.gunNo = info_dict.get("gunNo")
         service_rsvCharge.appomathod = info_dict.get("appomathod")
         service_rsvCharge.appoDelay = info_dict.get("appoDelay")
-        # print(f"service_rsvCharge: {service_rsvCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_rsvCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_rsvCharge(json_str):
@@ -1737,13 +1524,9 @@ def set_service_feedback_rsvCharge(json_str):
         service_feedback_rsvCharge.appomathod = info_dict.get("appomathod")
         service_feedback_rsvCharge.ret = info_dict.get("ret")
         service_feedback_rsvCharge.reason = info_dict.get("reason")
-        # print(f"service_feedback_rsvCharge: {service_feedback_rsvCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_rsvCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_groundLock_ctrl(json_str):
@@ -1751,13 +1534,9 @@ def set_service_groundLock_ctrl(json_str):
         info_dict = json.loads(json_str)
         service_groundLock_ctrl.gunNo = info_dict.get("gunNo")
         service_groundLock_ctrl.ctrlFlag = info_dict.get("ctrlFlag")
-        # print(f"service_groundLock_ctrl: {service_groundLock_ctrl}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_groundLock_ctrl---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_groundLock_ctrl(json_str):
@@ -1766,13 +1545,9 @@ def set_service_feedback_groundLock_ctrl(json_str):
         service_feedback_groundLock_ctrl.gunNo = info_dict.get("gunNo")
         service_feedback_groundLock_ctrl.reason = info_dict.get("reason")
         service_feedback_groundLock_ctrl.result = info_dict.get("result")
-        # print(f"service_feedback_groundLock_ctrl: {service_feedback_groundLock_ctrl}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_groundLock_ctrl---json_data: {json_str}. {e}")
         return -1
 
 def set_event_groundLock_change(json_str):
@@ -1787,13 +1562,9 @@ def set_event_groundLock_change(json_str):
         event_groundLock_change.lowPower = info_dict.get("lowPower")
         event_groundLock_change.soc = info_dict.get("soc")
         event_groundLock_change.openCnt = info_dict.get("openCnt")
-        # print(f"event_groundLock_change: {event_groundLock_change}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_groundLock_change---json_data: {json_str}. {e}")
         return -1
 
 def set_service_gateLock_ctrl(json_str):
@@ -1801,13 +1572,9 @@ def set_service_gateLock_ctrl(json_str):
         info_dict = json.loads(json_str)
         service_gateLock_ctrl.lockNo = info_dict.get("lockNo")
         service_gateLock_ctrl.ctrlFlag = info_dict.get("ctrlFlag")
-        # print(f"service_gateLock_ctrl: {service_gateLock_ctrl}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_gateLock_ctrl---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_gateLock_ctrl(json_str):
@@ -1815,13 +1582,9 @@ def set_service_feedback_gateLock_ctrl(json_str):
         info_dict = json.loads(json_str)
         service_feedback_gateLock_ctrl.lockNo = info_dict.get("lockNo")
         service_feedback_gateLock_ctrl.result = info_dict.get("result")
-        # print(f"service_feedback_gateLock_ctrl: {service_feedback_gateLock_ctrl}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_gateLock_ctrl---json_data: {json_str}. {e}")
         return -1
 
 def set_event_gateLock_change(json_str):
@@ -1829,13 +1592,9 @@ def set_event_gateLock_change(json_str):
         info_dict = json.loads(json_str)
         event_gateLock_change.lockNo = info_dict.get("lockNo")
         event_gateLock_change.lockState = info_dict.get("lockState")
-        # print(f"event_gateLock_change: {event_gateLock_change}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_gateLock_change---json_data: {json_str}. {e}")
         return -1
 
 def set_service_orderCharge(json_str):
@@ -1845,13 +1604,9 @@ def set_service_orderCharge(json_str):
         service_orderCharge.num = info_dict.get("num")
         service_orderCharge.validTime = info_dict.get("validTime")
         service_orderCharge.kw = str_to_char(info_dict.get("kw"))
-        # print(f"service_orderCharge: {service_orderCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_orderCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_orderCharge(json_str):
@@ -1860,13 +1615,9 @@ def set_service_feedback_orderCharge(json_str):
         service_feedback_orderCharge.preTradeNo = str_to_char(info_dict.get("preTradeNo"))
         service_feedback_orderCharge.result = info_dict.get("result")
         service_feedback_orderCharge.reason = info_dict.get("reason")
-        # print(f"service_feedback_orderCharge: {service_feedback_orderCharge}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_orderCharge---json_data: {json_str}. {e}")
         return -1
 
 def set_event_pile_stutus_change(json_str):
@@ -1875,13 +1626,9 @@ def set_event_pile_stutus_change(json_str):
         event_pile_stutus_change.gunNo = info_dict.get("gunNo")
         event_pile_stutus_change.yxOccurTime = info_dict.get("yxOccurTime")
         event_pile_stutus_change.connCheckStatus = info_dict.get("connCheckStatus")
-        # print(f"event_pile_stutus_change: {event_pile_stutus_change}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_pile_stutus_change---json_data: {json_str}. {e}")
         return -1
 
 def set_event_car_info(json_str):
@@ -1892,13 +1639,9 @@ def set_event_car_info(json_str):
         event_car_info.batterySOC = info_dict.get("batterySOC")
         event_car_info.batteryCap = info_dict.get("batteryCap")
         event_car_info.state = info_dict.get("state")
-        # print(f"event_car_info: {event_car_info}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_car_info---json_data: {json_str}. {e}")
         return -1
 
 def set_property_dcPile(json_str):
@@ -1918,12 +1661,8 @@ def set_property_dcPile(json_str):
         property_dcPile.outletTemp = info_dict.get("outletTemp", 0)
         property_dcPile.eleModelId = str_to_char(info_dict.get("eleModelId", ""))
         property_dcPile.serModelId = str_to_char(info_dict.get("serModelId", ""))
-        # print(f"property_dcPile: {property_dcPile}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
         HSyslog.log_info(f"set_property_dcPile---json_data: {json_str}. {e}")
         return -1
 
@@ -1945,12 +1684,8 @@ def set_property_BMS(json_str):
         property_BMS.maxVol = info_dict.get("maxVol", 0)
         property_BMS.maxTemp = info_dict.get("maxTemp", 0)
         property_BMS.batCurVol = info_dict.get("batCurVol", 0)
-        # print(f"property_BMS: {property_BMS}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
         HSyslog.log_info(f"set_property_BMS---json_data: {json_str}. {e}")
         return -1
 
@@ -1992,12 +1727,8 @@ def set_property_dc_work(json_str):
         property_dc_work.totalCost = info_dict.get("totalCost", 0)
         property_dc_work.totalPowerCost = info_dict.get("totalPowerCost", 0)
         property_dc_work.totalServCost = info_dict.get("totalServCost", 0)
-        # print(f"property_dc_work: {property_dc_work}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
         HSyslog.log_info(f"set_property_dc_work---json_data: {json_str}. {e}")
         return -1
 
@@ -2016,12 +1747,8 @@ def set_property_dc_nonWork(json_str):
         property_dc_nonWork.conTemp2 = info_dict.get("conTemp2", 0)
         property_dc_nonWork.dcVol = info_dict.get("dcVol", 0)
         property_dc_nonWork.dcCur = info_dict.get("dcCur", 0)
-        # print(f"property_dc_nonWork: {property_dc_nonWork}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
         HSyslog.log_info(f"set_property_dc_nonWork---json_data: {json_str}. {e}")
         return -1
 
@@ -2037,12 +1764,8 @@ def set_property_dc_input_meter(json_str):
         property_dc_input_meter.ApElect = info_dict.get("ApElect", 0)
         property_dc_input_meter.BpElect = info_dict.get("BpElect", 0)
         property_dc_input_meter.CpElect = info_dict.get("CpElect", 0)
-        # print(f"property_dc_input_meter: {property_dc_input_meter}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
         HSyslog.log_info(f"set_property_dc_input_meter---json_data: {json_str}. {e}")
         return -1
 
@@ -2057,12 +1780,8 @@ def set_property_meter(json_str):
         property_meter.elec = info_dict.get("elec", 0)
         property_meter.meterNo = str_to_char(info_dict.get("meterNo", ""))
         property_meter.mailAddr = str_to_char(info_dict.get("mailAddr", ""))
-        # print(f"property_meter: {property_meter}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
         HSyslog.log_info(f"set_property_meter---json_data: {json_str}. {e}")
         return -1
 
@@ -2147,26 +1866,18 @@ def set_event_logQuery_Result(json_str):
             logData.BMSData.maxTemp = info_dict.get("dataArea").get("maxTemp")
             logData.BMSData.batCurVol = info_dict.get("dataArea").get("batCurVol")
             event_logQuery_Result.dataArea = logData
-        # print(f"event_logQuery_Result: {event_logQuery_Result}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_logQuery_Result---json_data: {json_str}. {e}")
         return -1
 
 def set_event_dev_config(json_str):
     try:
         info_dict = json.loads(json_str)
         event_dev_config.dev = str_to_char(info_dict.get("dev"))
-        # print(f"event_dev_config: {event_dev_config}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_dev_config---json_data: {json_str}. {e}")
         return -1
 
 def set_service_feedback_maintain_query(json_str):
@@ -2174,13 +1885,9 @@ def set_service_feedback_maintain_query(json_str):
         info_dict = json.loads(json_str)
         service_feedback_maintain_query.ctrlType = info_dict.get("ctrlType")
         service_feedback_maintain_query.result = info_dict.get("result")
-        # print(f"service_feedback_maintain_query: {service_feedback_maintain_query}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_service_feedback_maintain_query---json_data: {json_str}. {e}")
         return -1
 
 def set_event_ask_feeModel(json_str):
@@ -2189,13 +1896,9 @@ def set_event_ask_feeModel(json_str):
         event_ask_feeModel.gunNo = info_dict.get("gunNo")
         event_ask_feeModel.eleModelId = str_to_char(info_dict.get("eleModelId", ""))
         event_ask_feeModel.serModelId = str_to_char(info_dict.get("serModelId", ""))
-        # print(f"event_ask_feeModel: {event_ask_feeModel}")
         return 0
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---json_data: {json_str}")
-        # print(f"data_output---dict_data: {info_dict}")
-        HSyslog.log_info(f"data_input---json_data: {json_str}. {e}")
+        HSyslog.log_info(f"set_event_ask_feeModel---json_data: {json_str}. {e}")
         return -1
 
 #---------------------------------------------------获取系统参数--------------------------------------------------------#
@@ -2212,13 +1915,9 @@ def get_device_meta():
             "device_uid": char_to_str(device_meta.device_uid)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_device_meta---json_data: {data_json}. {e}")
         return ""
 
 def get_event_fireware_info():
@@ -2250,13 +1949,9 @@ def get_event_fireware_info():
             "isGroundLock": event_fireware_info.isGroundLock
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_fireware_info---json_data: {data_json}. {e}")
         return ""
 
 def get_event_ver_info():
@@ -2268,13 +1963,9 @@ def get_event_ver_info():
             "sdkVer": char_to_str(event_ver_info.sdkVer)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_ver_info---json_data: {data_json}. {e}")
         return ""
 
 def get_data_dev_config():
@@ -2293,13 +1984,9 @@ def get_data_dev_config():
             "qrCode": char_to_str(data_dev_config.qrCode)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_data_dev_config---json_data: {data_json}. {e}")
         return ""
 
 def get_service_query_log():
@@ -2312,13 +1999,9 @@ def get_service_query_log():
             "logQueryNo": char_to_str(service_query_log.logQueryNo)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_query_log---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_query_log():
@@ -2332,26 +2015,18 @@ def get_service_feedback_query_log():
             "logQueryNo": char_to_str(service_feedback_query_log.logQueryNo)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_query_log---json_data: {data_json}. {e}")
         return ""
 
 def get_service_dev_maintain():
     try:
         data = {"ctrlType": service_dev_maintain.ctrlType}
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_dev_maintain---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_dev_maintain():
@@ -2361,13 +2036,9 @@ def get_service_feedback_dev_maintain():
             "reason": service_feedback_dev_maintain.reason
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_dev_maintain---json_data: {data_json}. {e}")
         return ""
 
 def get_service_lockCtrl():
@@ -2377,13 +2048,9 @@ def get_service_lockCtrl():
             "lockParam": service_lockCtrl.lockParam
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_lockCtrl---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_lockCtrl():
@@ -2394,13 +2061,9 @@ def get_service_feedback_lockCtrl():
             "resCode": service_feedback_lockCtrl.resCode
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_lockCtrl---json_data: {data_json}. {e}")
         return ""
 
 def get_event_ask_feeModel():
@@ -2411,13 +2074,9 @@ def get_event_ask_feeModel():
             "serModelId": char_to_str(event_ask_feeModel.serModelId)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_ask_feeModel---json_data: {data_json}. {e}")
         return ""
 
 def get_service_issue_feeModel():
@@ -2432,13 +2091,9 @@ def get_service_issue_feeModel():
             "serviceFee": char_to_str(service_issue_feeModel.serviceFee)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_issue_feeModel---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_feeModel():
@@ -2449,13 +2104,9 @@ def get_service_feedback_feeModel():
             "result": service_feedback_feeModel.result
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_feeModel---json_data: {data_json}. {e}")
         return ""
 
 def get_service_startCharge():
@@ -2472,13 +2123,9 @@ def get_service_startCharge():
             "insertGunTime": service_startCharge.insertGunTime
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_startCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_startCharge():
@@ -2489,13 +2136,9 @@ def get_service_feedback_startCharge():
             "tradeNo": char_to_str(service_feedback_startCharge.tradeNo)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_startCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_event_startResult():
@@ -2509,13 +2152,9 @@ def get_event_startResult():
             "vinCode": char_to_str(event_startResult.vinCode)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_startResult---json_data: {data_json}. {e}")
         return ""
 
 def get_event_startCharge():
@@ -2532,13 +2171,9 @@ def get_event_startCharge():
             "batteryVol": event_startCharge.batteryVol
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_startCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_authCharge():
@@ -2557,13 +2192,9 @@ def get_service_authCharge():
             "insertGunTime": service_authCharge.insertGunTime
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_authCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_authCharge():
@@ -2574,13 +2205,9 @@ def get_service_feedback_authCharge():
             "tradeNo": char_to_str(service_feedback_authCharge.tradeNo)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_authCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_stopCharge():
@@ -2592,13 +2219,9 @@ def get_service_stopCharge():
             "stopReason": service_stopCharge.stopReason
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_stopCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_stopCharge():
@@ -2609,13 +2232,9 @@ def get_service_feedback_stopCharge():
             "tradeNo": char_to_str(service_feedback_stopCharge.tradeNo)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_stopCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_event_stopCharge():
@@ -2629,13 +2248,9 @@ def get_event_stopCharge():
             "stopFailReson": event_stopCharge.stopFailReson
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_stopCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_event_tradeInfo():
@@ -2672,13 +2287,9 @@ def get_event_tradeInfo():
             "valleyServCost": event_tradeInfo.valleyServCost
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_tradeInfo---json_data: {data_json}. {e}")
         return ""
 
 def get_service_confirmTrade():
@@ -2690,13 +2301,9 @@ def get_service_confirmTrade():
             "errcode": service_confirmTrade.errcode
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_confirmTrade---json_data: {data_json}. {e}")
         return ""
 
 def get_event_alarm():
@@ -2709,13 +2316,9 @@ def get_event_alarm():
             "warnValue": char_to_str(event_alarm.warnValue)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_alarm---json_data: {data_json}. {e}")
         return ""
 
 def get_server_rsvCharge():
@@ -2726,13 +2329,9 @@ def get_server_rsvCharge():
             "appoDelay": service_rsvCharge.appoDelay
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_server_rsvCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_rsvCharge():
@@ -2744,13 +2343,9 @@ def get_service_feedback_rsvCharge():
             "reason": service_feedback_rsvCharge.reason
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_rsvCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_groundLock_ctrl():
@@ -2760,13 +2355,9 @@ def get_service_groundLock_ctrl():
             "ctrlFlag": service_groundLock_ctrl.ctrlFlag
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_groundLock_ctrl---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_groundLock_ctrl():
@@ -2777,13 +2368,9 @@ def get_service_feedback_groundLock_ctrl():
             "result": service_feedback_groundLock_ctrl.result
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_groundLock_ctrl---json_data: {data_json}. {e}")
         return ""
 
 def get_event_groundLock_change():
@@ -2800,13 +2387,9 @@ def get_event_groundLock_change():
             "openCnt": event_groundLock_change.openCnt
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_groundLock_change---json_data: {data_json}. {e}")
         return ""
 
 def get_service_gateLock_ctrl():
@@ -2816,13 +2399,9 @@ def get_service_gateLock_ctrl():
             "ctrlFlag": service_gateLock_ctrl.ctrlFlag
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_gateLock_ctrl---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_gateLock_ctrl():
@@ -2832,13 +2411,9 @@ def get_service_feedback_gateLock_ctrl():
             "result": service_feedback_gateLock_ctrl.result
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_gateLock_ctrl---json_data: {data_json}. {e}")
         return ""
 
 def get_event_gateLock_change():
@@ -2848,13 +2423,9 @@ def get_event_gateLock_change():
             "lockState": event_gateLock_change.lockState
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_gateLock_change---json_data: {data_json}. {e}")
         return ""
 
 def get_service_orderCharge():
@@ -2866,13 +2437,9 @@ def get_service_orderCharge():
             "kw": char_to_str(service_orderCharge.kw)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_orderCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_orderCharge():
@@ -2883,13 +2450,9 @@ def get_service_feedback_orderCharge():
             "reason": service_feedback_orderCharge.reason
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_orderCharge---json_data: {data_json}. {e}")
         return ""
 
 def get_event_pile_stutus_change():
@@ -2900,13 +2463,9 @@ def get_event_pile_stutus_change():
             "connCheckStatus": event_pile_stutus_change.connCheckStatus
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_pile_stutus_change---json_data: {data_json}. {e}")
         return ""
 
 def get_event_car_info():
@@ -2919,13 +2478,9 @@ def get_event_car_info():
             "state": event_car_info.state
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_car_info---json_data: {data_json}. {e}")
         return ""
 
 def get_property_dcPile():
@@ -2947,13 +2502,9 @@ def get_property_dcPile():
             "serModelId": char_to_str(property_dcPile.serModelId)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_property_dcPile---json_data: {data_json}. {e}")
         return ""
 
 def get_property_BMS():
@@ -2976,13 +2527,9 @@ def get_property_BMS():
             "batCurVol": property_BMS.batCurVol
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_property_BMS---json_data: {data_json}. {e}")
         return ""
 
 def get_property_dc_work():
@@ -3025,13 +2572,9 @@ def get_property_dc_work():
             "totalServCost": property_dc_work.totalServCost
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_property_dc_work---json_data: {data_json}. {e}")
         return ""
 
 def get_property_dc_nonWork():
@@ -3051,13 +2594,9 @@ def get_property_dc_nonWork():
             "dcCur": property_dc_nonWork.dcCur
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_property_dc_nonWork---json_data: {data_json}. {e}")
         return ""
 
 def get_property_dc_input_meter():
@@ -3074,13 +2613,9 @@ def get_property_dc_input_meter():
             "CpElect": property_dc_input_meter.CpElect
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_property_dc_input_meter---json_data: {data_json}. {e}")
         return ""
 
 def get_property_meter():
@@ -3096,13 +2631,9 @@ def get_property_meter():
             "elec": property_meter.elec
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_property_meter---json_data: {data_json}. {e}")
         return ""
 
 
@@ -3121,13 +2652,9 @@ def get_event_logQuery_Result():
             "dataArea": event_logQuery_Result.dataArea
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_event_logQuery_Result---json_data: {data_json}. {e}")
         return ""
 
 def get_device_code():
@@ -3136,13 +2663,9 @@ def get_device_code():
             "device_code": char_to_str(device_meta.device_reg_code)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_device_code---json_data: {data_json}. {e}")
         return ""
 
 def get_device_uid():
@@ -3151,13 +2674,9 @@ def get_device_uid():
             "device_uid": char_to_str(device_meta.device_uid)
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_device_uid---json_data: {data_json}. {e}")
         return ""
 
 def get_service_feedback_maintain_query():
@@ -3167,12 +2686,8 @@ def get_service_feedback_maintain_query():
             "result": service_feedback_maintain_query.result
         }
         data_json = json.dumps(data)
-        # print(data_json)
         return data_json
     except Exception as e:
-        # print(red_char + f"{e}" + init_char)
-        # print(f"data_input---dict_data: {dev_meta_info_t}")
-        # print(f"data_output---dict_data: {data_json}")
-        HSyslog.log_info(f"data_input---json_data: {data_json}. {e}")
+        HSyslog.log_info(f"get_service_feedback_maintain_query---json_data: {data_json}. {e}")
         return ""
 

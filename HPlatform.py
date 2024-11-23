@@ -61,6 +61,7 @@ class PeriodicFunctionCaller:
 
 
 def linkkit_init():
+    HSyslog.log_info(HStategrid.Sign_type)
     while True:
         if HStategrid.get_DeviceInfo("deviceCode") is None or HStategrid.get_DeviceInfo("deviceCode") == "":
             time.sleep(10)
@@ -86,10 +87,9 @@ def linkkit_init():
         if result[0] is not None:
             HSyslog.log_info(f"set_version: {result[0]}")
             set_version(result[0])
-        HStategrid.save_DeviceInfo("SDKVersion", 1, "A.0.5.241016", 0)
+        HStategrid.save_DeviceInfo("SDKVersion", 1, HStategrid.SDKVersion, 0)
         HStategrid.save_DeviceInfo("UIVersion", 1, HHhdlist.read_json_config("ui_version"), 0)
-        HHhdlist.save_json_config({"SDKVersion": "A.0.5.241016"})
-        HHhdlist.save_json_config({"Platform_type": "GW_SDK"})
+        HStategrid.Vendor_Code = HStategrid.get_DeviceInfo("deviceCode")[0:4]
         time.sleep(3)
 
         if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
@@ -161,7 +161,7 @@ def plamform_property(property_type: int, property_dict: dict):
         property_json = json.dumps(property_dict)
         send_event_queue.put([property_type, property_json])
     except Exception as e:
-        HSyslog.log_info(f"input_data---info_dict: {property_dict}. {e}")
+        HSyslog.log_info(f"plamform_property---info_dict: {property_dict}. {e}")
         return -1
 
 
@@ -223,9 +223,9 @@ def _send_property_dcPile():
                 "acCurB": 0,
                 "acVolC": 380,
                 "acCurC": 0,
-                "caseTemp": 70,
-                "inletTemp": 70,
-                "outletTemp": 70,
+                "caseTemp": 700,
+                "inletTemp": 700,
+                "outletTemp": 700,
                 "eleModelId": eleModelId,
                 "serModelId": serModelId,
             }
@@ -258,7 +258,6 @@ def _send_property_fault():
     if HStategrid.get_property_status() == 1:
         try:
             if HHhdlist.device_fault != {}:
-                HSyslog.log_info(HHhdlist.device_fault)
                 for i in range(0, HStategrid.gun_num):
                     if HHhdlist.device_fault.get(i + 1, {}) != {}:
                         gunNo = i + 1
@@ -324,9 +323,9 @@ def _send_property_dc_work():
                         "peakElect": preTradeNo_data.get("peak_kwh", 0),
                         "flatElect": preTradeNo_data.get("flat_kwh", 0),
                         "valleyElect": preTradeNo_data.get("valley_kwh", 0),
-                        "totalCost": preTradeNo_data.get("total_cost", 0) * 10,
-                        "totalPowerCost": preTradeNo_data.get("total_electric_cost", 0) * 10,
-                        "totalServCost": preTradeNo_data.get("total_service_cost", 0) * 10
+                        "totalCost": preTradeNo_data.get("total_cost", 0),
+                        "totalPowerCost": preTradeNo_data.get("total_electric_cost", 0),
+                        "totalServCost": preTradeNo_data.get("total_service_cost", 0)
                     }
                     if chgTime <= 60:
                         plamform_property(16, dc_work)
@@ -513,83 +512,100 @@ def service_query_log(data_json):  # 日志查询
         send_logQueryEvt(info_dict)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_query_log: {data_json} .{e}")
-        return ""
+        HSyslog.log_info(f"Service_query_log error: {data_json} .{e}")
+        info_dict = json.loads(data_json)
+        data = {
+            "gunNo": info_dict.get("gunNo"),
+            "startDate": info_dict.get("startDate", ""),
+            "stopDate": info_dict.get("stopDate", 0),
+            "askType": info_dict.get("askType", 0),
+            "result": 12,
+            "logQueryNo": info_dict.get("logQueryNo", "")
+        }
+        json_str = json.dumps(data)
+        return json_str
 
 
 def service_dev_maintain(data_json):  # 充电机状态控制
+    HSyslog.log_info(f"Service_dev_maintain: {data_json}")
+    info_dict = json.loads(data_json)
+    ctrlType = info_dict.get("ctrlType", -1)
     try:
-        HSyslog.log_info(f"Service_dev_maintain: {data_json}")
-        info_dict = json.loads(data_json)
-        ctrlType = info_dict.get("ctrlType", -1)
         if ctrlType == 11:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-            subprocess.run(['sudo', 'reboot'])
-        if ctrlType == 12:
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+            # subprocess.run(['sudo', 'reboot'])
+        elif ctrlType == 12:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-        if ctrlType == 13:
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+        elif ctrlType == 13:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-            subprocess.run(['supervisorctl', 'stop', 'internal'])
-            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
-        if ctrlType == 14:
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+            # subprocess.run(['supervisorctl', 'stop', 'internal'])
+            # subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
+        elif ctrlType == 14:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-            subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
-            subprocess.run(['supervisorctl', 'restart', 'internal'])
-            subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
-        if ctrlType == 15:
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+            # subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
+            # subprocess.run(['supervisorctl', 'restart', 'internal'])
+            # subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
+        elif ctrlType == 15:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-            subprocess.run(['supervisorctl', 'stop', 'internal'])
-            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
-        if ctrlType == 17:
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+            # subprocess.run(['supervisorctl', 'stop', 'internal'])
+            # subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
+        elif ctrlType == 17:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-            time.sleep(3)
-            subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
-            subprocess.run(['supervisorctl', 'restart', 'internal'])
-            subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
-        if ctrlType == 16:
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+        elif ctrlType == 16:
             data = {
-                "ctrlType": info_dict.get("ctrlType"),
+                "ctrlType": ctrlType,
                 "reason": 10
             }
-            json_str = json.dumps(data)
-            subprocess.run(['supervisorctl', 'stop', 'internal'])
-            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
-            subprocess.run(['supervisorctl', 'stop', 'internal_ocpp'])
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+            # subprocess.run(['supervisorctl', 'stop', 'internal'])
+            # subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
+        else:
+            data = {
+                "ctrlType": ctrlType,
+                "reason": 12
+            }
+            HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
+        json_str = json.dumps(data)
         return json_str
     except Exception as e:
-        HSyslog.log_info(f"Service_dev_maintain. {data_json} .{e}")
-        return ""
+        HSyslog.log_info(f"Service_dev_maintain error. {data_json} .{e}")
+        data = {
+            "ctrlType": info_dict.get("ctrlType"),
+            "reason": 12
+        }
+        json_str = json.dumps(data)
+        return json_str
 
 
 def service_lockCtrl(data_json):  # 电子锁控制
+    HSyslog.log_info(f"Service_lockCtrl: {data_json}")
+    info_dict = json.loads(data_json)
+    lockParam = info_dict.get("lockParam", -1)
     try:
-        HSyslog.log_info(f"Service_lockCtrl: {data_json}")
-        info_dict = json.loads(data_json)
-        lockParam = info_dict.get("lockParam", -1)
         if lockParam == 10:
             info = {
                 'device_type': 2,
@@ -618,7 +634,7 @@ def service_lockCtrl(data_json):  # 电子锁控制
             json_str = json.dumps(data)
             return json_str
         except Exception as e:
-            HSyslog.log_info(f"{e}")
+            HSyslog.log_info(f"lockParam: {e}")
             data = {
                 "gunNo": info_dict.get("gunNo"),
                 "lockStatus": lockParam,
@@ -628,23 +644,45 @@ def service_lockCtrl(data_json):  # 电子锁控制
             return json_str
     except Exception as e:
         HSyslog.log_info(f"Service_lockCtrl .{data_json} .{e}")
-        return ""
+        data = {
+            "gunNo": info_dict.get("gunNo"),
+            "lockStatus": lockParam,
+            "resCode": 13
+        }
+        json_str = json.dumps(data)
+        return json_str
 
 
 def service_issue_feeModel(data_json):  # 费率更新
+    HSyslog.log_info(f"Service_issue_feeModel: {data_json}")
+    info_dict = json.loads(data_json)
+    chargeFee = info_dict.get("chargeFee")
+    serviceFee = info_dict.get("serviceFee")
     try:
-        HSyslog.log_info(f"Service_issue_feeModel: {data_json}")
-        info_dict = json.loads(data_json)
         HStategrid.save_FeeModel(info_dict)
+        HStategrid.fee_model["fee_elect"] = chargeFee
+        HStategrid.fee_model["fee_ser"] = serviceFee
         HTools.Htool_app_charge_rate_sync_message(info_dict)  # 传入设备
         msg = HHhdlist.fee_queue.get(timeout=5)
-        if msg == -1:
-            return ""
-        json_str = json.dumps(msg)
+        if msg != -1:
+            json_str = json.dumps(msg)
+        else:
+            data = {
+                "eleModelId": HStategrid.get_DeviceInfo("eleModelId"),
+                "serModelId": HStategrid.get_DeviceInfo("serModelId"),
+                "result": 12
+            }
+            json_str = json.dumps(data)
         return json_str
     except Exception as e:
         HSyslog.log_info(f"Service_issue_feeModel .{data_json} .{e}")
-        return ""
+        data = {
+            "eleModelId": HStategrid.get_DeviceInfo("eleModelId"),
+            "serModelId": HStategrid.get_DeviceInfo("serModelId"),
+            "result": 12
+        }
+        json_str = json.dumps(data)
+        return json_str
 
 
 def service_startCharge(data_json):  # 启动充电
@@ -659,10 +697,44 @@ def service_startCharge(data_json):  # 启动充电
                     "preTradeNo": info_dict.get("preTradeNo", ""),
                     "tradeNo": info_dict.get("tradeNo", ""),
                     "startResult": 14,
-                    "faultCode": 1008,
+                    "faultCode": 3062,
                     "vinCode": ""
                 }
                 send_startChaResEvt(data)
+                eleModelId = HStategrid.get_DeviceInfo("eleModelId")
+                serModelId = HStategrid.get_DeviceInfo("serModelId")
+                info = {
+                    "gunNo": gunNo,
+                    "preTradeNo": info_dict.get("preTradeNo", ""),
+                    "tradeNo": "",
+                    "vinCode": "",
+                    "timeDivType": 10,
+                    "chargeStartTime": int(time.time()),
+                    "chargeEndTime": int(time.time()),
+                    "startSoc": 0,
+                    "endSoc": 0,
+                    "reason": 3062,
+                    "eleModelId": eleModelId,
+                    "serModelId": serModelId,
+                    "sumStart": HHhdlist.meter.get(gunNo).get(0, 0),
+                    "sumEnd": HHhdlist.meter.get(gunNo).get(0, 0),
+                    "totalElect": 0,
+                    "sharpElect": 0,
+                    "peakElect": 0,
+                    "flatElect": 0,
+                    "valleyElect": 0,
+                    "totalPowerCost": 0,
+                    "totalServCost": 0,
+                    "sharpPowerCost": 0,
+                    "peakPowerCost": 0,
+                    "flatPowerCost": 0,
+                    "valleyPowerCost": 0,
+                    "sharpServCost": 0,
+                    "peakServCost": 0,
+                    "flatServCost": 0,
+                    "valleyServCost": 0
+                }
+                send_orderUpdateEvt(info)
                 try:
                     data = {
                         "gunNo": info_dict.get("gunNo"),
@@ -675,14 +747,14 @@ def service_startCharge(data_json):  # 启动充电
                     HSyslog.log_info(f"Service_startCharge .{data_json} .{e}")
                     return ""
             else:
-                if gunNo not in HHhdlist.device_charfer_p:
+                if gunNo not in HHhdlist.device_charfer_p or HHhdlist.device_charfer_p.get(gunNo) != {}:
                     HHhdlist.device_charfer_p[gunNo] = {}
                 HHhdlist.device_charfer_p[gunNo].update({"preTradeNo": info_dict.get("preTradeNo")})
                 HHhdlist.device_charfer_p[gunNo].update({"tradeNo": info_dict.get("tradeNo")})
                 HHhdlist.device_charfer_p[gunNo].update({"startType": info_dict.get("startType")})
                 HHhdlist.device_charfer_p[gunNo].update({"chargeMode": info_dict.get("chargeMode")})
                 HHhdlist.device_charfer_p[gunNo].update({"limitData": info_dict.get("limitData")})
-                HHhdlist.device_charfer_p[gunNo].update({"stopCode": info_dict.get("stopCode")})
+                HHhdlist.device_charfer_p[gunNo].update({"stopCode": str(info_dict.get("stopCode"))})
                 HHhdlist.device_charfer_p[gunNo].update({"startMode": info_dict.get("startMode")})
                 HHhdlist.device_charfer_p[gunNo].update({"insertGunTime": info_dict.get("insertGunTime")})
 
@@ -738,7 +810,7 @@ def service_startCharge(data_json):  # 启动充电
                 HHhdlist.device_charfer_p[gunNo].update({"startType": info_dict.get("startType")})
                 HHhdlist.device_charfer_p[gunNo].update({"chargeMode": info_dict.get("chargeMode")})
                 HHhdlist.device_charfer_p[gunNo].update({"limitData": info_dict.get("limitData")})
-                HHhdlist.device_charfer_p[gunNo].update({"stopCode": info_dict.get("stopCode")})
+                HHhdlist.device_charfer_p[gunNo].update({"stopCode": str(info_dict.get("stopCode"))})
                 HHhdlist.device_charfer_p[gunNo].update({"startMode": info_dict.get("startMode")})
                 HHhdlist.device_charfer_p[gunNo].update({"insertGunTime": info_dict.get("insertGunTime")})
 
@@ -779,7 +851,7 @@ def service_authCharge(data_json):  # 鉴权结果
         HHhdlist.device_charfer_p[gunNo].update({"preTradeNo": info_dict.get("preTradeNo")})
         HHhdlist.device_charfer_p[gunNo].update({"chargeMode": info_dict.get("chargeMode")})
         HHhdlist.device_charfer_p[gunNo].update({"limitData": info_dict.get("limitData")})
-        HHhdlist.device_charfer_p[gunNo].update({"stopCode": info_dict.get("stopCode")})
+        HHhdlist.device_charfer_p[gunNo].update({"stopCode": str(info_dict.get("stopCode"))})
         HHhdlist.device_charfer_p[gunNo].update({"startMode": info_dict.get("startMode")})
         HHhdlist.device_charfer_p[gunNo].update({"insertGunTime": info_dict.get("insertGunTime")})
         HHhdlist.device_charfer_p[gunNo].update({"oppoCode": info_dict.get("oppoCode")})
@@ -1026,22 +1098,22 @@ def service_update_config(data_json):  # 更新配置
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
         gun_num = HStategrid.gun_num
         if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
-            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:{HStategrid.Vendor_Code}:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
         elif HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceRegCode.value:
-            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:1:{deviceCode}:FFFFFFFFFFFF:00"
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:{HStategrid.Vendor_Code}:1.0.0:1:{deviceCode}:FFFFFFFFFFFF:00"
         else:
             deviceName = HStategrid.get_DeviceInfo("deviceName")
-            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:2:{deviceName}:FFFFFFFFFFFF:00"
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:{HStategrid.Vendor_Code}:1.0.0:2:{deviceName}:FFFFFFFFFFFF:00"
         for i in range(0, gun_num):
             info_qrCode = {
                 "gun_id": i,
                 "source": i,
-                "content": qrCode + f"{i}",
+                "content": qrCode + f"{i + 1}",
             }
             HTools.Htool_app_QR_code_update(info_qrCode)
 
         for i in range(0, gun_num):
-            HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
+            HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i + 1}", 0)
             return 10
     except Exception as e:
         HSyslog.log_info(f"qrCode .{data_json} .{e}")
@@ -1109,6 +1181,7 @@ def service_time_sync(data_json):  # 时钟同步
             "minute": info_dict.get("minute"),
             "second": info_dict.get("second"),
         }
+        HTools.Htool_app_time_sync(time_dict)
         year = info_dict.get("year")
         month = info_dict.get("month")
         day = info_dict.get("day")
@@ -1145,12 +1218,14 @@ def service_connectSucc(data_json):  # 连接成功
         HStategrid.set_link_init_status(info_dict.get("onlink_status"))
         while True:
             if HHhdlist.device_mqtt_status:
-                # HStategrid.set_flaut_status(1)
+                HStategrid.set_flaut_status(1)
                 send_firmwareEvt()
                 send_verInfoEvt("DTU")
                 send_askConfigEvt()
                 command_time = f"sudo cp /opt/hhd/ex_cloud/DeviceCode.json /root"
                 subprocess.run(command_time, shell=True, check=True, capture_output=True, text=True)
+                if HStategrid.fee_model.get("fee_elect") is None or HStategrid.fee_model.get("fee_ser") is None:
+                    HStategrid.get_FeeModel()
                 break
         HSyslog.log_info(f"onlink_status: {HStategrid.link_init_status}")
         return HStategrid.get_link_init_status()
@@ -1203,7 +1278,7 @@ def service_certSet(data_json):  # 设置属性
     try:
         HSyslog.log_info(f"Service_certSet: {data_json}")
         info_dict = json.loads(data_json)
-        HStategrid.save_DeviceInfo("Vendor_Code", 1, "1031", 0)
+        HStategrid.save_DeviceInfo("Vendor_Code", 1, f"{HStategrid.Vendor_Code}", 0)
         HStategrid.save_DeviceInfo("device_type", 1, "01", 0)
         HStategrid.save_DeviceInfo("productKey", 1, info_dict.get("product_key"), 0)
         HStategrid.save_DeviceInfo("deviceName", 1, info_dict.get("device_name"), 0)
@@ -1243,8 +1318,11 @@ def service_mainres(data_json):  # 设备状态查询
     try:
         HSyslog.log_info(f"Service_mainres: {data_json}")
         info_dict = json.loads(data_json)
+        ctrlType = HStategrid.get_DeviceInfo("device_status")
+        if ctrlType is None:
+            ctrlType = 14
         data = {
-            "ctrlType": 14,
+            "ctrlType": ctrlType,
             "result": 10
         }
         json_str = json.dumps(data)
@@ -1256,7 +1334,7 @@ def service_mainres(data_json):  # 设备状态查询
 
 
 def send_firmwareEvt():
-    param_id = [135, 103, 110, 121, 113, 114, 115, 117, 101, 104, 111, 129, 141]
+    param_id = [135, 103, 110, 121, 113, 114, 115, 117, 101, 104, 111, 129, 141, 116]
     get_data = {
         "device_type": 0,
         "device_num": 0,
@@ -1273,7 +1351,8 @@ def send_firmwareEvt():
         HStategrid.gun_num = HStategrid.get_DeviceInfo("00110")
         if HStategrid.get_DeviceInfo("00141") is not None:
             if HStategrid.get_DeviceInfo("00141") == 0 or HStategrid.get_DeviceInfo("00141") == 1:
-                stakeModel = f"HHD_DC_All-in-One PC_{HStategrid.gun_num}"
+                # stakeModel = f"HHD_DC_All-in-One PC_{HStategrid.gun_num}"
+                stakeModel = f"DKCP-1000/120kWD-YT-H"
                 HHhdlist.device_type = 1
             else:
                 stakeModel = f"HHD_Qunchong PC_{HStategrid.gun_num}"
@@ -1299,9 +1378,6 @@ def send_firmwareEvt():
         simNo = HStategrid.get_DeviceInfo("00102")
         if simNo is None:
             simNo = ""
-        otCur = HStategrid.get_DeviceInfo("00115")
-        if otCur is None:
-            otCur = 2500
         info_dict = {
             "simNo": simNo,
             "eleModelId": eleModelId,
@@ -1319,9 +1395,12 @@ def send_firmwareEvt():
             "btMac": "",
             "meaType": 10,
             "otRate": HStategrid.gun_num * HStategrid.get_DeviceInfo("00117") * 0.01,
+            # "otRate": 1200,
             "otMinVol": float(HStategrid.get_DeviceInfo("00114") * 0.1),
             "otMaxVol": float(HStategrid.get_DeviceInfo("00113") * 0.1),
-            "otCur": otCur,
+            # "otMinVol": 2000,
+            # "otMaxVol": 10000,
+            "otCur": 2500,
             "inMeter": [],
             "outMeter": outMeter,
             "CT": 0,
@@ -1333,26 +1412,26 @@ def send_firmwareEvt():
                 HHhdlist.device_charfer_p[i + 1] = {}
         deviceCode = HStategrid.get_DeviceInfo("deviceCode")
         if HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceCode.value:
-            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:{HStategrid.Vendor_Code}:1.0.0:3:{deviceCode}:FFFFFFFFFFFF:00"
         elif HStategrid.Sign_type == HStategrid.SIGN_TYPE.deviceRegCode.value:
-            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:1:{deviceCode}:FFFFFFFFFFFF:00"
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:{HStategrid.Vendor_Code}:1.0.0:1:{deviceCode}:FFFFFFFFFFFF:00"
         else:
             deviceName = HStategrid.get_DeviceInfo("deviceName")
-            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:1031:1.0.0:2:{deviceName}:FFFFFFFFFFFF:00"
+            qrCode = f"https://cdn-evone-oss.echargenet.com/IntentServe/index.html?M&qrcode=gwwl//:{HStategrid.Vendor_Code}:1.0.0:2:{deviceName}:FFFFFFFFFFFF:00"
         qrcode_ack = {}
         HSyslog.log_info(HStategrid.gun_num)
         for i in range(0, HStategrid.gun_num):
             info_qrCode = {
                 "gun_id": i,
                 "source": i,
-                "content": qrCode + f"{i}",
+                "content": qrCode + f"{i + 1}",
             }
             HTools.Htool_app_QR_code_update(info_qrCode)
             qrcode_ack.update({i: True})
         plamform_event(0, info_dict)
         HHhdlist.save_json_config({"qrcode": qrcode_ack})
         for i in range(0, HStategrid.gun_num):
-            HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i}", 0)
+            HStategrid.save_DeviceInfo("qrCode" + str(i), 1, qrCode + f"{i + 1}", 0)
         return 0
     except Exception as e:
         HSyslog.log_info(f"send_firmwareEvts error: {e}")
@@ -1475,7 +1554,7 @@ def send_verInfoEvt(device_type):
             ui_version = HStategrid.get_DeviceInfo("UIVersion")
             info_dict = {
                 "devRegMethod": 10,
-                "pileSoftwareVer": f"Charger:{data[0]}/SDK:{sdk_version}/UI:{ui_version}",
+                "pileSoftwareVer": f"Charger:{data[0]}",
                 "pileHardwareVer": data[1],
                 "sdkVer": "SDK_v1.1.7"
             }

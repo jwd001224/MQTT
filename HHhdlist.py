@@ -6,8 +6,11 @@ from datetime import datetime
 from enum import Enum
 import json
 
+import HSyslog
+
 ota_version = None
 config_file = '/opt/hhd/ex_cloud/DeviceCode.json'
+config_directory = '/opt/hhd/ex_cloud/'
 device_type = None
 
 device_mqtt_status = False
@@ -334,17 +337,18 @@ def read_json_config(config_type, file_path=config_file):
     return None
 
 
-def save_json_config(config_data, file_path=config_file):
+def save_json_config(config_data, file_path=config_file, directory_path=config_directory):
     # 如果文件存在，先读取现有的配置
     if os.path.exists(file_path):
         try:
             with open(file_path, 'r') as config_file:
                 existing_config = json.load(config_file)
         except json.JSONDecodeError:
-            print(f"无法解析文件 {file_path}。使用空配置。")
+            HSyslog.log_info(f"无法解析文件 {file_path}。使用空配置。")
             existing_config = {}
     else:
         # 如果文件不存在，初始化为空配置
+        os.makedirs(directory_path)
         existing_config = {}
 
     # 更新现有配置
