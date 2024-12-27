@@ -434,6 +434,7 @@ def app_telemetry_telesignaling(msg_body_dict: dict):
                     "yxOccurTime": int(time.time()),
                     "connCheckStatus": 10
                 }
+                HHhdlist.device_charfer_p[i] = {}
             else:
                 data = {
                     "gunNo": i,
@@ -450,6 +451,7 @@ def app_telemetry_telesignaling(msg_body_dict: dict):
                         "yxOccurTime": int(time.time()),
                         "connCheckStatus": 10
                     }
+                    HHhdlist.device_charfer_p[i] = {}
                 else:
                     data = {
                         "gunNo": i,

@@ -261,6 +261,9 @@ def iot_send_property(event_type: int, event_struct: str):
         set_property_dc_input_meter(event_struct)
         evs_send_property(EVS_CMD_PROPERTY_DC_INPUT_METER, &property_dc_input_meter)
         HSyslog.log_info(f"Send_Property_to_Platform_dc_input_meter: {property_dc_input_meter}")
+    if event_type == 21:
+        iot_linkkit_time_sync()
+        HSyslog.log_info(f"iot_linkkit_time_sync")
 
 def server_callback(server:int, func):
     if server == 2:

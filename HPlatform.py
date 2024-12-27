@@ -537,7 +537,7 @@ def service_dev_maintain(data_json):  # 充电机状态控制
                 "reason": 10
             }
             HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
-            # subprocess.run(['sudo', 'reboot'])
+            subprocess.run(['sudo', 'reboot'])
         elif ctrlType == 12:
             data = {
                 "ctrlType": ctrlType,
@@ -550,25 +550,25 @@ def service_dev_maintain(data_json):  # 充电机状态控制
                 "reason": 10
             }
             HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
-            # subprocess.run(['supervisorctl', 'stop', 'internal'])
-            # subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
+            subprocess.run(['supervisorctl', 'stop', 'internal'])
+            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
         elif ctrlType == 14:
             data = {
                 "ctrlType": ctrlType,
                 "reason": 10
             }
             HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
-            # subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
-            # subprocess.run(['supervisorctl', 'restart', 'internal'])
-            # subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
+            subprocess.run(['supervisorctl', 'restart', 'internal_ocpp'])
+            subprocess.run(['supervisorctl', 'restart', 'internal'])
+            subprocess.run(['supervisorctl', 'restart', 'internal_ui'])
         elif ctrlType == 15:
             data = {
                 "ctrlType": ctrlType,
                 "reason": 10
             }
             HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
-            # subprocess.run(['supervisorctl', 'stop', 'internal'])
-            # subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
+            subprocess.run(['supervisorctl', 'stop', 'internal'])
+            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
         elif ctrlType == 17:
             data = {
                 "ctrlType": ctrlType,
@@ -581,8 +581,8 @@ def service_dev_maintain(data_json):  # 充电机状态控制
                 "reason": 10
             }
             HStategrid.save_DeviceInfo("device_status", 2, "", ctrlType)
-            # subprocess.run(['supervisorctl', 'stop', 'internal'])
-            # subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
+            subprocess.run(['supervisorctl', 'stop', 'internal'])
+            subprocess.run(['supervisorctl', 'stop', 'internal_ui'])
         else:
             data = {
                 "ctrlType": ctrlType,
@@ -1351,14 +1351,14 @@ def send_firmwareEvt():
         HStategrid.gun_num = HStategrid.get_DeviceInfo("00110")
         if HStategrid.get_DeviceInfo("00141") is not None:
             if HStategrid.get_DeviceInfo("00141") == 0 or HStategrid.get_DeviceInfo("00141") == 1:
-                # stakeModel = f"HHD_DC_All-in-One PC_{HStategrid.gun_num}"
-                stakeModel = f"DKCP-1000/120kWD-YT-H"
+                stakeModel = f"HHD_DC_All-in-One PC_{HStategrid.gun_num}"
+                # stakeModel = f"HQC-SDK"
                 HHhdlist.device_type = 1
             else:
                 stakeModel = f"HHD_Qunchong PC_{HStategrid.gun_num}"
                 HHhdlist.device_type = 2
         else:
-            stakeModel = "HHD_DC_2"
+            stakeModel = f"HHD_DC_All-in-One PC_{HStategrid.gun_num}"
         if eleModelId is None or eleModelId == "":
             eleModelId = ""
         if serModelId is None or serModelId == "":

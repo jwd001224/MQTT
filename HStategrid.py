@@ -23,7 +23,7 @@ net_status = 0
 gun_num = 0
 gunElecFreq_time = 0
 send_gunElecFreq = {}
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 platform_data = {
     "netType": 13,
@@ -56,7 +56,7 @@ syslog_path = '/var/log'  # 替换为实际路径
 back_data_pzth = "/root/back_Platform.db"
 dtu_ota = ""
 heartbeat = 0
-SDKVersion = "A.0.5"
+SDKVersion = "A.0.6"
 Platform_type = "GW_SDK"
 
 device_hard = {
