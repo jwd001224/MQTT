@@ -25,28 +25,42 @@ class HMqttClient:
         self.broker_port = broker_port
         self.keepalive = keepalive
         self.client_id = client_id
-        self.client = mqtt.Client(client_id=client_id)
+        self.client = None
         self.send_thread = None
+        self.connect_thread = None
+
+    def start_connect(self):
+        if not self.connect_thread or not self.connect_thread.is_alive():
+            self.connect_thread = threading.Thread(target=self.connect, daemon=True)
+            self.connect_thread.start()
 
     def connect(self, isReady=False):
         """连接到MQTT服务器"""
         try:
-            try:
-                # 设置回调函数
-                self.client.on_connect = self._on_connect
-                self.client.on_disconnect = self._on_disconnect
-                self.client.on_message = self._on_message
+            while True:
+                if HHhdlist.device_mqtt_status is False:
+                    try:
+                        self.client = mqtt.Client(client_id=self.client_id)
+                        # 设置回调函数
+                        self.client.on_connect = self._on_connect
+                        self.client.on_disconnect = self._on_disconnect
+                        self.client.on_message = self._on_message
+                        self.client.connect(self.broker_address, self.broker_port, self.keepalive)
 
-                self.client.connect(self.broker_address, self.broker_port, self.keepalive)
-                self.subscribe()
-                self.client.loop_start()  # 启动网络循环以处理连接
-                isReady = True
-                HSyslog.log_info(f"Connected to Device MQTT broker at {self.broker_address}:{self.broker_port}")
-            except Exception as e:
-                HSyslog.log_info(f"Failed to Device Connect to broker: {e}")
+                        self.subscribe()
+                        self.client.loop_start()  # 启动网络循环以处理连接
 
-            if isReady:
-                self.start_send_thread()
+                        isReady = True
+                        HSyslog.log_info(f"Connected to Device MQTT broker at {self.broker_address}:{self.broker_port}")
+                    except Exception as e:
+                        HSyslog.log_info(f"Failed to Device Connect to broker: {e}")
+                        time.sleep(5)
+                else:
+                    time.sleep(30)
+
+                if isReady:
+                    self.start_send_thread()
+                time.sleep(5)
         except socket.error as e:
             HSyslog.log_info(f"connect_device: {e}")
             time.sleep(5)
@@ -73,13 +87,14 @@ class HMqttClient:
 
     def _on_disconnect(self, client, userdata, rc):
         """断开连接时的回调函数"""
-        HSyslog.log_info("check device connection is closed! rc = {}".format(rc))
-        HHhdlist.device_mqtt_status = False
-        # 断线自动重连
         try:
-            if rc != 0:
-                HSyslog.log_info("Attempting to device reconnect...")
-                self.reconnect()
+            HSyslog.log_info("check device connection is closed! rc = {}".format(rc))
+            self.client.loop_stop()
+            HHhdlist.device_mqtt_status = False
+            # 断线自动重连
+            #     if rc != 0:
+            #         HSyslog.log_info("Attempting to device reconnect...")
+            #         self.reconnect()
         except Exception as e:
             HSyslog.log_info(f"Device MQTT.close: {e}")
 
@@ -89,7 +104,7 @@ class HMqttClient:
             self.client.reconnect()
             HSyslog.log_info("Reconnected to Device MQTT broker")
         except Exception as e:
-            HSyslog.log_info(f"Device Reconnection failed: {e}")
+            HSyslog.log_error(f"Device Reconnection failed: {e}")
 
     def subscribe(self):
         """订阅主题"""
@@ -116,26 +131,36 @@ class HMqttClient:
     def _send_messages(self):
         """向主题发送消息"""
         while True:
-            if not DtoP_queue:
-                time.sleep(0.1)
-            else:
-                try:
-                    if DtoP_queue.empty():
-                        time.sleep(0.1)
-                    else:
-                        msg = dict(DtoP_queue.get())
-                        topic = msg.get("topic")
-                        send_data = msg.get("msg", "")
-                        qos = msg.get("qos", 0)
-                        result = self.client.publish(topic, send_data, qos)
-                        if result.rc == mqtt_client.MQTT_ERR_SUCCESS:
-                            if topic != '/hqc/sys/network-state':
-                                HSyslog.log_info(f"Send_to_Device {send_data} to topic: {topic}")
+            if HHhdlist.device_mqtt_status:
+                if not DtoP_queue:
+                    time.sleep(0.1)
+                else:
+                    try:
+                        if DtoP_queue.empty():
+                            time.sleep(0.1)
                         else:
-                            HSyslog.log_info(f"Failed to send device message, result code: {result.rc}")
-                        time.sleep(0.02)
-                except Exception as e:
-                    HSyslog.log_info(f"Send_to_Device: {e}")
+                            msg = dict(DtoP_queue.get())
+                            topic = msg.get("topic")
+                            send_data = msg.get("msg", "")
+                            qos = msg.get("qos", 0)
+                            result = self.client.publish(topic, send_data, qos)
+                            if result.rc == mqtt_client.MQTT_ERR_SUCCESS:
+                                if topic != '/hqc/sys/network-state':
+                                    HSyslog.log_info(f"Send_to_Device {send_data} to topic: {topic}")
+                            else:
+                                HSyslog.log_info(f"Failed to send device message, result code: {result.rc}")
+                            time.sleep(0.02)
+                    except Exception as e:
+                        HSyslog.log_info(f"Send_to_Device: {e}")
+            else:
+                if not DtoP_queue:
+                    time.sleep(0.01)
+                else:
+                    if DtoP_queue.empty():
+                        time.sleep(0.01)
+                    else:
+                        msg = DtoP_queue.get()
+                        HSyslog.log_info(f"Send_to_Device Faild: {msg}")
 
 
 def analysis_msg_dict(func_dict: dict, msg_dict: dict, topic: str):

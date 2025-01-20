@@ -102,7 +102,8 @@ def linkkit_init():
         if HStategrid.gun_num is not None and HHhdlist.device_charfer_p == {}:
             for i in range(0, HStategrid.gun_num):
                 HHhdlist.device_charfer_p[i + 1] = {}
-                HHhdlist.bms_sum[i + 1] = 1
+                HHhdlist.bms_sum.update({i + 1: 1})
+                HSyslog.log_info(HHhdlist.bms_sum)
                 HStategrid.send_gunElecFreq[i + 1] = 0
     except Exception as e:
         HSyslog.log_info(f"linkkit_init error: {e}")
@@ -414,7 +415,10 @@ def _send_property_BMS():
     if HStategrid.get_property_status() == 1:
         try:
             for i in HHhdlist.bms.keys():
+                if HHhdlist.bms_sum.get(i, -1) == -1:
+                    HHhdlist.bms_sum.update({i: 1})
                 if HHhdlist.gun.get(i).get(1) == 6:
+                    HSyslog.log_info(HHhdlist.bms_sum)
                     if HHhdlist.bms_sum.get(i) <= 6:
                         preTradeNo_data = HHhdlist.device_charfer_p.get(i)
                         BMS = {
@@ -436,7 +440,7 @@ def _send_property_BMS():
                         }
                         plamform_property(19, BMS)
                         HStategrid.save_dcBmsRunIty(BMS)
-                        HHhdlist.bms_sum[i] = HHhdlist.bms_sum[i] + 1
+                        HHhdlist.bms_sum[i] += 1
             return "BMS"
         except Exception as e:
             HSyslog.log_info(f"Send_Property_to_Platform_BMS Failed. {e}")

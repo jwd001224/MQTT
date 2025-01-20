@@ -347,9 +347,12 @@ def save_json_config(config_data, file_path=config_file, directory_path=config_d
             HSyslog.log_info(f"无法解析文件 {file_path}。使用空配置。")
             existing_config = {}
     else:
-        # 如果文件不存在，初始化为空配置
-        os.makedirs(directory_path)
-        existing_config = {}
+        try:
+            # 如果文件不存在，初始化为空配置
+            os.makedirs(directory_path)
+            existing_config = {}
+        except Exception as e:
+            existing_config = {}
 
     # 更新现有配置
     existing_config.update(config_data)

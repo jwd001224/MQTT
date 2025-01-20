@@ -25,8 +25,8 @@ else:
     logging.basicConfig(level=logging.INFO, format=log_format)
 
 # 创建文件处理器
-log_filename = "/opt/hhd/LOG/HCLOG.log"
-log_directory = "/opt/hhd/LOG"
+log_filename = "/var/log/LOG/HCLOG.log"
+log_directory = "/var/log/LOG"
 log_max_size = 3 * 1024 * 1024  # 3MB
 count = 1
 

@@ -573,7 +573,7 @@ def get_mac_address(interface):
         # mac = ":".join([mac_bytes[i:i+2] for i in range(0, 12, 2)])
         return mac_bytes
     except FileNotFoundError:
-        return None
+        return ""
 
 
 def set_property_status(info: int):
@@ -1125,7 +1125,6 @@ def delete_dcOutMeterIty():
     cur.execute('SELECT * FROM dcOutMeterIty')
     result = cur.fetchall()
     for info in result:
-        print(info)
         if int(time.time()) - time_unix_14(info[2]) >= 86400 * 30:
             cur.execute("DELETE FROM dcOutMeterIty WHERE acqTime=?", (info[2],))
     conn.commit()
